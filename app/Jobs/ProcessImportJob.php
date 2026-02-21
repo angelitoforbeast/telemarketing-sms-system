@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ImportJob;
 use App\Services\Import\FileParserService;
-use App\Services\Import\NormalizationService;
+use App\Services\Import\ImportService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -22,13 +22,13 @@ class ProcessImportJob implements ShouldQueue
     public function __construct(public ImportJob $importJob)
     {}
 
-    public function handle(FileParserService $fileParser, NormalizationService $normalizationService)
+    public function handle(FileParserService $fileParser, ImportService $importService)
     {
         if ($this->importJob->status !== 'queued') {
             return; // Already processed or failed
         }
 
-        $this->importJob->markAsProcessing();
+        $this->importJob->markProcessing();
 
         try {
             // Step 1: Parse the raw file into raw_jnt_rows or raw_flash_rows
@@ -36,10 +36,14 @@ class ProcessImportJob implements ShouldQueue
             $this->importJob->update(['total_rows' => $totalRows]);
 
             // Step 2: Normalize the raw rows into the main shipments table
-            $stats = $normalizationService->normalizeImportJob($this->importJob);
+            if ($this->importJob->courier === 'jnt') {
+                $importService->processJntRows($this->importJob);
+            } else {
+                $importService->processFlashRows($this->importJob);
+            }
 
             // Step 3: Mark as completed
-            $this->importJob->markAsCompleted($stats);
+            $this->importJob->markCompleted();
 
         } catch (\Throwable $e) {
             Log::error("Import job failed for ID: {$this->importJob->id}", [
@@ -47,7 +51,6 @@ class ProcessImportJob implements ShouldQueue
                 'trace' => $e->getTraceAsString(),
             ]);
             $this->importJob->markFailed(['message' => $e->getMessage()]);
-            // We don't re-throw to prevent the job from being retried automatically by the queue worker
         }
     }
 }

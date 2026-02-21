@@ -62,7 +62,7 @@ class ImportService
     /**
      * Process all raw JNT rows for an import job.
      */
-    protected function processJntRows(ImportJob $importJob): void
+    public function processJntRows(ImportJob $importJob): void
     {
         $rawRows = $importJob->rawJntRows()->where('is_processed', false)->cursor();
 
@@ -85,7 +85,7 @@ class ImportService
     /**
      * Process all raw Flash rows for an import job.
      */
-    protected function processFlashRows(ImportJob $importJob): void
+    public function processFlashRows(ImportJob $importJob): void
     {
         $rawRows = $importJob->rawFlashRows()->where('is_processed', false)->cursor();
 

@@ -74,9 +74,22 @@ class ImportJob extends Model
         $this->update(['status' => 'processing', 'started_at' => now()]);
     }
 
+    public function markAsProcessing(): void
+    {
+        $this->markProcessing();
+    }
+
     public function markCompleted(): void
     {
         $this->update(['status' => 'completed', 'completed_at' => now()]);
+    }
+
+    public function markAsCompleted(array $stats = []): void
+    {
+        $this->update(array_merge([
+            'status' => 'completed',
+            'completed_at' => now(),
+        ], $stats));
     }
 
     public function markFailed(array $errors = []): void
