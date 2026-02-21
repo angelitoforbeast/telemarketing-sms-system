@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Company\CompanyUserController;
 use App\Http\Controllers\Company\DashboardController;
+use App\Http\Controllers\Company\RemittanceController;
+use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Import\ImportController;
 use App\Http\Controllers\Platform\PlatformAdminController;
 use App\Http\Controllers\ProfileController;
@@ -43,6 +45,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::get('/import', [ImportController::class, 'index'])->name('import.index');
             Route::get('/import/{importJob}', [ImportController::class, 'show'])->name('import.show');
             Route::get('/import/{importJob}/status', [ImportController::class, 'status'])->name('import.status');
+            Route::post('/import/status-batch', [ImportController::class, 'statusBatch'])->name('import.status-batch');
         });
 
         // Shipments
@@ -82,6 +85,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         });
         Route::middleware('can:sms.campaigns.toggle')->group(function () {
             Route::post('/sms/campaigns/{campaign}/toggle', [SmsCampaignController::class, 'toggle'])->name('sms.campaigns.toggle');
+        });
+
+        // Remittance (CEO / Company Owner)
+        Route::middleware('can:remittance.view')->group(function () {
+            Route::get('/remittance', [RemittanceController::class, 'index'])->name('remittance.index');
+        });
+
+        // Company Settings (COD Fee Rate, etc.)
+        Route::middleware('can:settings.manage')->group(function () {
+            Route::get('/settings', [SettingsController::class, 'edit'])->name('settings.edit');
+            Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
         });
 
         // Company User Management

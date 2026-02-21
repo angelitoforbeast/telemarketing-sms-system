@@ -47,6 +47,12 @@ class RolesAndPermissionsSeeder extends Seeder
             'dashboard.view',
             'dashboard.reports',
 
+            // Remittance
+            'remittance.view',
+
+            // Settings
+            'settings.manage',
+
             // Platform Admin
             'platform.manage-companies',
             'platform.manage-all-users',
@@ -63,6 +69,19 @@ class RolesAndPermissionsSeeder extends Seeder
         $platformAdmin = Role::firstOrCreate(['name' => 'Platform Admin', 'guard_name' => 'web']);
         $platformAdmin->syncPermissions(Permission::all());
 
+        // CEO — full access including remittance
+        $ceo = Role::firstOrCreate(['name' => 'CEO', 'guard_name' => 'web']);
+        $ceo->syncPermissions([
+            'import.upload', 'import.view',
+            'shipments.view', 'shipments.assign', 'shipments.auto-assign',
+            'telemarketing.view-queue', 'telemarketing.log-call', 'telemarketing.view-all-logs',
+            'sms.campaigns.view', 'sms.campaigns.create', 'sms.campaigns.edit', 'sms.campaigns.toggle', 'sms.logs.view',
+            'users.view', 'users.create', 'users.edit', 'users.toggle',
+            'dashboard.view', 'dashboard.reports',
+            'remittance.view',
+            'settings.manage',
+        ]);
+
         // Company Owner — full access within their company
         $companyOwner = Role::firstOrCreate(['name' => 'Company Owner', 'guard_name' => 'web']);
         $companyOwner->syncPermissions([
@@ -72,9 +91,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'sms.campaigns.view', 'sms.campaigns.create', 'sms.campaigns.edit', 'sms.campaigns.toggle', 'sms.logs.view',
             'users.view', 'users.create', 'users.edit', 'users.toggle',
             'dashboard.view', 'dashboard.reports',
+            'remittance.view',
+            'settings.manage',
         ]);
 
-        // Company Manager — same as owner minus user management
+        // Company Manager — same as owner minus user management and remittance
         $companyManager = Role::firstOrCreate(['name' => 'Company Manager', 'guard_name' => 'web']);
         $companyManager->syncPermissions([
             'import.upload', 'import.view',

@@ -38,9 +38,21 @@
                         </x-nav-link>
                         @endcan
 
+                        @can('remittance.view')
+                        <x-nav-link :href="route('remittance.index')" :active="request()->routeIs('remittance.*')">
+                            Remittance
+                        </x-nav-link>
+                        @endcan
+
                         @can('users.view')
                         <x-nav-link :href="route('company.users.index')" :active="request()->routeIs('company.users.*')">
                             Users
+                        </x-nav-link>
+                        @endcan
+
+                        @can('settings.manage')
+                        <x-nav-link :href="route('settings.edit')" :active="request()->routeIs('settings.*')">
+                            Settings
                         </x-nav-link>
                         @endcan
                     @else
@@ -109,8 +121,14 @@
                 @can('sms.campaigns.view')
                 <x-responsive-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">SMS Campaigns</x-responsive-nav-link>
                 @endcan
+                @can('remittance.view')
+                <x-responsive-nav-link :href="route('remittance.index')" :active="request()->routeIs('remittance.*')">Remittance</x-responsive-nav-link>
+                @endcan
                 @can('users.view')
                 <x-responsive-nav-link :href="route('company.users.index')" :active="request()->routeIs('company.users.*')">Users</x-responsive-nav-link>
+                @endcan
+                @can('settings.manage')
+                <x-responsive-nav-link :href="route('settings.edit')" :active="request()->routeIs('settings.*')">Settings</x-responsive-nav-link>
                 @endcan
             @else
                 <x-responsive-nav-link :href="route('platform.dashboard')" :active="request()->routeIs('platform.dashboard')">Platform Dashboard</x-responsive-nav-link>

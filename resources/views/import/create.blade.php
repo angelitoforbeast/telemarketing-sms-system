@@ -22,12 +22,12 @@
                                 <label class="flex items-center space-x-2 cursor-pointer">
                                     <input type="radio" name="courier" value="jnt" class="text-indigo-600 focus:ring-indigo-500" required>
                                     <span class="text-sm font-medium text-gray-700">J&T Express</span>
-                                    <span class="text-xs text-gray-400">(.xlsx)</span>
+                                    <span class="text-xs text-gray-400">(.xlsx / .zip)</span>
                                 </label>
                                 <label class="flex items-center space-x-2 cursor-pointer">
                                     <input type="radio" name="courier" value="flash" class="text-indigo-600 focus:ring-indigo-500">
                                     <span class="text-sm font-medium text-gray-700">Flash Express</span>
-                                    <span class="text-xs text-gray-400">(.csv)</span>
+                                    <span class="text-xs text-gray-400">(.csv / .zip)</span>
                                 </label>
                             </div>
                         </div>
@@ -35,9 +35,9 @@
                         {{-- File Input --}}
                         <div class="mb-6">
                             <label for="file" class="block text-sm font-medium text-gray-700 mb-2">Select File</label>
-                            <input type="file" name="file" id="file" accept=".xlsx,.csv"
+                            <input type="file" name="file" id="file" accept=".xlsx,.csv,.zip"
                                    class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" required>
-                            <p class="mt-1 text-xs text-gray-400">Max file size: 200MB. Supported formats: .xlsx, .csv</p>
+                            <p class="mt-1 text-xs text-gray-400">Max file size: 200MB. Supported formats: .xlsx, .csv, .zip (containing .xlsx or .csv files)</p>
                         </div>
 
                         <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">

@@ -51,6 +51,17 @@ class DatabaseSeeder extends Seeder
         );
         $owner->assignRole('Company Owner');
 
+        $ceo = \App\Models\User::firstOrCreate(
+            ['email' => 'ceo@demo.com'],
+            [
+                'name' => 'Demo CEO',
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'company_id' => $company->id,
+                'is_active' => true,
+            ]
+        );
+        $ceo->assignRole('CEO');
+
         $telemarketer = \App\Models\User::firstOrCreate(
             ['email' => 'agent@demo.com'],
             [

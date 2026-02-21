@@ -18,6 +18,8 @@ class Company extends Model
         'address',
         'contact_email',
         'contact_phone',
+        'cod_fee_rate',
+        'cod_vat_rate',
     ];
 
     protected static function booted(): void
