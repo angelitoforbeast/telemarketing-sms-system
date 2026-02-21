@@ -42,6 +42,7 @@ return new class extends Migration
             $table->integer('telemarketing_attempt_count')->default(0);
             $table->timestamp('last_contacted_at')->nullable();
             $table->boolean('is_do_not_contact')->default(false);
+            $table->string('source_status_text')->nullable();
             $table->timestamps();
 
             $table->unique(['company_id', 'courier', 'waybill_no']);

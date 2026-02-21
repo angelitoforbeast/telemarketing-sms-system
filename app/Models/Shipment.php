@@ -40,6 +40,7 @@ class Shipment extends Model
         'telemarketing_attempt_count',
         'last_contacted_at',
         'is_do_not_contact',
+        'source_status_text',
     ];
 
     protected $casts = [

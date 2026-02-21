@@ -42,6 +42,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('can:import.view')->group(function () {
             Route::get('/import', [ImportController::class, 'index'])->name('import.index');
             Route::get('/import/{importJob}', [ImportController::class, 'show'])->name('import.show');
+            Route::get('/import/{importJob}/status', [ImportController::class, 'status'])->name('import.status');
         });
 
         // Shipments
