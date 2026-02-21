@@ -3,33 +3,51 @@
 namespace App\Jobs;
 
 use App\Models\ImportJob;
-use App\Services\Import\ImportService;
+use App\Services\Import\FileParserService;
+use App\Services\Import\NormalizationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 class ProcessImportJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 3;
-    public int $timeout = 600; // 10 minutes max
+    public $timeout = 1800; // 30 minutes
+    public $tries = 1;
 
-    public function __construct(
-        public ImportJob $importJob
-    ) {}
+    public function __construct(public ImportJob $importJob)
+    {}
 
-    public function handle(ImportService $importService): void
+    public function handle(FileParserService $fileParser, NormalizationService $normalizationService)
     {
-        $importService->processImportJob($this->importJob);
-    }
+        if ($this->importJob->status !== 'queued') {
+            return; // Already processed or failed
+        }
 
-    public function failed(\Throwable $exception): void
-    {
-        $this->importJob->markFailed([
-            'message' => $exception->getMessage(),
-        ]);
+        $this->importJob->markAsProcessing();
+
+        try {
+            // Step 1: Parse the raw file into raw_jnt_rows or raw_flash_rows
+            $totalRows = $fileParser->parseAndStoreRawRows($this->importJob);
+            $this->importJob->update(['total_rows' => $totalRows]);
+
+            // Step 2: Normalize the raw rows into the main shipments table
+            $stats = $normalizationService->normalizeImportJob($this->importJob);
+
+            // Step 3: Mark as completed
+            $this->importJob->markAsCompleted($stats);
+
+        } catch (\Throwable $e) {
+            Log::error("Import job failed for ID: {$this->importJob->id}", [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            $this->importJob->markFailed(['message' => $e->getMessage()]);
+            // We don't re-throw to prevent the job from being retried automatically by the queue worker
+        }
     }
 }

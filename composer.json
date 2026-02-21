@@ -10,7 +10,7 @@
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
-        "phpoffice/phpspreadsheet": "^5.4",
+        "openspout/openspout": "^4.25",
         "spatie/laravel-permission": "^6.24"
     },
     "require-dev": {

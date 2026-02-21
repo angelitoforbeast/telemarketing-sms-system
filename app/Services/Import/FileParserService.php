@@ -5,185 +5,140 @@ namespace App\Services\Import;
 use App\Models\ImportJob;
 use App\Models\RawFlashRow;
 use App\Models\RawJntRow;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Reader\Xlsx as XlsxReader;
+use OpenSpout\Reader\Common\Creator\ReaderEntityFactory;
 
 class FileParserService
 {
-    /**
-     * Store the uploaded file and create raw rows for processing.
-     */
-    public function parseAndStoreRawRows(UploadedFile $file, ImportJob $importJob): int
-    {
-        $extension = strtolower($file->getClientOriginalExtension());
+    const CHUNK_SIZE = 500;
 
-        if (in_array($extension, ['xlsx', 'xls'])) {
-            return $this->parseExcel($file, $importJob);
-        } elseif ($extension === 'csv') {
-            return $this->parseCsv($file, $importJob);
+    public function parseAndStoreRawRows(ImportJob $importJob): int
+    {
+        $filePath = Storage::disk("local")->path($importJob->storage_path);
+        $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+
+        if (in_array($extension, ["xlsx", "xls"])) {
+            return $this->parseExcel($filePath, $importJob);
+        } elseif ($extension === "csv") {
+            return $this->parseCsv($filePath, $importJob);
         }
 
-        throw new \RuntimeException("Unsupported file format: {$extension}. Please upload .xlsx, .xls, or .csv files.");
+        throw new \RuntimeException("Unsupported file format: {$extension}.");
     }
 
-    /**
-     * Parse an Excel file (JNT typically uses .xlsx).
-     */
-    protected function parseExcel(UploadedFile $file, ImportJob $importJob): int
+    protected function parseExcel(string $filePath, ImportJob $importJob): int
     {
-        // Use a memory-efficient chunked reader for large files
-        $reader = new XlsxReader();
-        $reader->setReadDataOnly(true);
+        $reader = ReaderEntityFactory::createXLSXReader();
+        $reader->open($filePath);
 
-        // Load only the first sheet
-        $worksheetNames = $reader->listWorksheetNames($file->getPathname());
-        if (empty($worksheetNames)) {
-            throw new \RuntimeException('The uploaded file is empty.');
-        }
-        $reader->setLoadSheetsOnly($worksheetNames[0]);
-
-        $spreadsheet = $reader->load($file->getPathname());
-        $worksheet = $spreadsheet->getActiveSheet();
-
+        $count = 0;
+        $batch = [];
         $headers = null;
-        $count = 0;
-        $batch = [];
 
-        foreach ($worksheet->getRowIterator() as $rowObj) {
-            $cellIterator = $rowObj->getCellIterator();
-            $cellIterator->setIterateOnlyExistingCells(false);
+        foreach ($reader->getSheetIterator() as $sheet) {
+            foreach ($sheet->getRowIterator() as $row) {
+                $rowData = $row->toArray();
 
-            $rowData = [];
-            foreach ($cellIterator as $cell) {
-                $rowData[] = $cell->getValue();
-            }
+                if ($headers === null) {
+                    $headers = array_map("trim", $rowData);
+                    continue;
+                }
 
-            // First row is headers
-            if ($headers === null) {
-                $headers = array_map('trim', $rowData);
-                continue;
-            }
+                if (count($rowData) < count($headers)) {
+                    $rowData = array_pad($rowData, count($headers), null);
+                }
 
-            // Pad row if shorter than headers
-            while (count($rowData) < count($headers)) {
-                $rowData[] = '';
-            }
-            // Trim row if longer than headers
-            $rowData = array_slice($rowData, 0, count($headers));
+                $mappedData = array_combine($headers, $rowData);
 
-            $mapped = array_combine($headers, $rowData);
+                if ($this->isEmptyRow($mappedData)) continue;
 
-            // Skip completely empty rows
-            if ($this->isEmptyRow($mapped)) continue;
+                $batch[] = [
+                    "import_job_id" => $importJob->id,
+                    "data" => json_encode($mappedData),
+                    "is_processed" => false,
+                    "created_at" => now(),
+                    "updated_at" => now(),
+                ];
 
-            $batch[] = [
-                'import_job_id' => $importJob->id,
-                'data' => json_encode($mapped),
-                'is_processed' => false,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+                $count++;
 
-            $count++;
-
-            // Insert in batches of 500 and free memory
-            if (count($batch) >= 500) {
-                $this->insertRawBatch($importJob->courier, $batch);
-                $batch = [];
+                if (count($batch) >= self::CHUNK_SIZE) {
+                    $this->insertRawBatch($importJob->courier, $batch);
+                    $batch = [];
+                }
             }
         }
 
-        // Insert remaining rows
         if (!empty($batch)) {
             $this->insertRawBatch($importJob->courier, $batch);
         }
 
-        // Free memory
-        $spreadsheet->disconnectWorksheets();
-        unset($spreadsheet);
-
+        $reader->close();
         return $count;
     }
 
-    /**
-     * Parse a CSV file (Flash typically uses .csv).
-     */
-    protected function parseCsv(UploadedFile $file, ImportJob $importJob): int
+    protected function parseCsv(string $filePath, ImportJob $importJob): int
     {
-        $handle = fopen($file->getPathname(), 'r');
-        if (!$handle) {
-            throw new \RuntimeException('Could not open the CSV file.');
-        }
+        $reader = ReaderEntityFactory::createCSVReader();
+        $reader->setFieldDelimiter(",");
+        $reader->setFieldEnclosure("\"");
+        $reader->setEncoding("UTF-8");
+        $reader->open($filePath);
 
-        $headers = fgetcsv($handle);
-        if (!$headers) {
-            fclose($handle);
-            throw new \RuntimeException('The uploaded CSV file is empty.');
-        }
-
-        $headers = array_map('trim', $headers);
         $count = 0;
         $batch = [];
+        $headers = null;
 
-        while (($row = fgetcsv($handle)) !== false) {
-            // Pad row if shorter than headers
-            while (count($row) < count($headers)) {
-                $row[] = '';
-            }
+        foreach ($reader->getSheetIterator() as $sheet) {
+            foreach ($sheet->getRowIterator() as $row) {
+                $rowData = $row->toArray();
 
-            $rowData = array_combine($headers, $row);
+                if ($headers === null) {
+                    $headers = array_map("trim", $rowData);
+                    continue;
+                }
 
-            if ($this->isEmptyRow($rowData)) continue;
+                if (count($rowData) < count($headers)) {
+                    $rowData = array_pad($rowData, count($headers), null);
+                }
 
-            $batch[] = [
-                'import_job_id' => $importJob->id,
-                'data' => json_encode($rowData),
-                'is_processed' => false,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+                $mappedData = array_combine($headers, $rowData);
 
-            $count++;
+                if ($this->isEmptyRow($mappedData)) continue;
 
-            if (count($batch) >= 500) {
-                $this->insertRawBatch($importJob->courier, $batch);
-                $batch = [];
+                $batch[] = [
+                    "import_job_id" => $importJob->id,
+                    "data" => json_encode($mappedData),
+                    "is_processed" => false,
+                    "created_at" => now(),
+                    "updated_at" => now(),
+                ];
+
+                $count++;
+
+                if (count($batch) >= self::CHUNK_SIZE) {
+                    $this->insertRawBatch($importJob->courier, $batch);
+                    $batch = [];
+                }
             }
         }
-
-        fclose($handle);
 
         if (!empty($batch)) {
             $this->insertRawBatch($importJob->courier, $batch);
         }
 
+        $reader->close();
         return $count;
     }
 
-    /**
-     * Insert a batch of raw rows into the appropriate table.
-     */
     protected function insertRawBatch(string $courier, array $batch): void
     {
-        if ($courier === 'jnt') {
-            RawJntRow::insert($batch);
-        } else {
-            RawFlashRow::insert($batch);
-        }
+        $model = $courier === "jnt" ? RawJntRow::class : RawFlashRow::class;
+        $model::insert($batch);
     }
 
-    /**
-     * Check if a row is completely empty.
-     */
     protected function isEmptyRow(array $row): bool
     {
-        foreach ($row as $value) {
-            if (!empty(trim((string) $value))) {
-                return false;
-            }
-        }
-        return true;
+        return empty(array_filter($row, fn($value) => $value !== null && trim((string) $value) !== ""));
     }
 }
