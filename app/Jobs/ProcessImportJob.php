@@ -16,7 +16,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use OpenSpout\Reader\Common\Creator\ReaderEntityFactory;
+use OpenSpout\Reader\XLSX\Reader as XLSXReader;
+use OpenSpout\Reader\XLSX\Options as XLSXOptions;
+use OpenSpout\Reader\CSV\Reader as CSVReader;
+use OpenSpout\Reader\CSV\Options as CSVOptions;
 
 class ProcessImportJob implements ShouldQueue
 {
@@ -91,13 +94,13 @@ class ProcessImportJob implements ShouldQueue
         $reader = null;
 
         if ($ext === 'xlsx') {
-            $reader = ReaderEntityFactory::createXLSXReader();
+            $reader = new XLSXReader();
         } elseif ($ext === 'csv') {
-            $reader = ReaderEntityFactory::createCSVReader();
-            $reader->setFieldDelimiter(',');
-            $reader->setFieldEnclosure('"');
-            $reader->setEndOfLineCharacter("\n");
-            $reader->setEncoding('UTF-8');
+            $csvOptions = new CSVOptions();
+            $csvOptions->FIELD_DELIMITER = ',';
+            $csvOptions->FIELD_ENCLOSURE = '"';
+            $csvOptions->ENCODING = 'UTF-8';
+            $reader = new CSVReader($csvOptions);
         }
 
         if (!$reader) {

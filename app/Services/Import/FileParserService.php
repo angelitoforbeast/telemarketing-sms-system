@@ -6,7 +6,9 @@ use App\Models\ImportJob;
 use App\Models\RawFlashRow;
 use App\Models\RawJntRow;
 use Illuminate\Support\Facades\Storage;
-use OpenSpout\Reader\Common\Creator\ReaderEntityFactory;
+use OpenSpout\Reader\XLSX\Reader as XLSXReader;
+use OpenSpout\Reader\CSV\Reader as CSVReader;
+use OpenSpout\Reader\CSV\Options as CSVOptions;
 
 class FileParserService
 {
@@ -28,7 +30,7 @@ class FileParserService
 
     protected function parseExcel(string $filePath, ImportJob $importJob): int
     {
-        $reader = ReaderEntityFactory::createXLSXReader();
+        $reader = new XLSXReader();
         $reader->open($filePath);
 
         $count = 0;
@@ -79,10 +81,12 @@ class FileParserService
 
     protected function parseCsv(string $filePath, ImportJob $importJob): int
     {
-        $reader = ReaderEntityFactory::createCSVReader();
-        $reader->setFieldDelimiter(",");
-        $reader->setFieldEnclosure("\"");
-        $reader->setEncoding("UTF-8");
+        $csvOptions = new CSVOptions();
+        $csvOptions->FIELD_DELIMITER = ",";
+        $csvOptions->FIELD_ENCLOSURE = "\"";
+        $csvOptions->ENCODING = "UTF-8";
+
+        $reader = new CSVReader($csvOptions);
         $reader->open($filePath);
 
         $count = 0;
