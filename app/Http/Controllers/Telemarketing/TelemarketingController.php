@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Telemarketing;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ManualAssignJob;
+use App\Jobs\RunAutoAssignJob;
+use App\Jobs\UnassignShipmentsJob;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
 use App\Models\TelemarketingAssignmentRule;
@@ -198,27 +201,29 @@ class TelemarketingController extends Controller
     }
 
     /**
-     * Run auto-assignment based on rules.
+     * Run auto-assignment based on rules (dispatched to background queue).
      */
     public function runAutoAssign(Request $request)
     {
         $companyId = $request->user()->company_id;
         $ruleId = $request->input('rule_id');
 
-        $results = $this->telemarketingService->autoAssignByRules($companyId, $ruleId);
+        RunAutoAssignJob::dispatch($companyId, $ruleId ? (int) $ruleId : null);
 
-        $totalAssigned = collect($results)->sum('assigned');
-        $details = collect($results)->map(fn ($r) => "{$r['rule']}: {$r['assigned']}")->join(', ');
-
-        if ($totalAssigned === 0) {
-            return back()->with('info', 'No shipments matched the assignment rules, or no telemarketers are available.');
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $ruleId
+                    ? 'Assignment rule is running in the background...'
+                    : 'All assignment rules are running in the background...',
+            ]);
         }
 
-        return back()->with('success', "Auto-assigned {$totalAssigned} shipments. ({$details})");
+        return back()->with('success', 'Auto-assignment is running in the background. Refresh in a few seconds to see results.');
     }
 
     /**
-     * Manual bulk assignment.
+     * Manual bulk assignment (dispatched to background queue).
      */
     public function manualAssign(Request $request)
     {
@@ -248,16 +253,31 @@ class TelemarketingController extends Controller
         $shipmentIds = $query->limit($limit)->pluck('id')->toArray();
 
         if (empty($shipmentIds)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No unassigned shipments match the criteria.',
+                ]);
+            }
             return back()->with('info', 'No unassigned shipments match the criteria.');
         }
 
-        $count = $this->telemarketingService->manualAssign($shipmentIds, $request->telemarketer_id, $companyId);
+        ManualAssignJob::dispatch($shipmentIds, (int) $request->telemarketer_id, $companyId);
 
-        return back()->with('success', "{$count} shipments assigned successfully.");
+        $count = count($shipmentIds);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Assigning {$count} shipments in the background...",
+            ]);
+        }
+
+        return back()->with('success', "Assigning {$count} shipments in the background. Refresh in a few seconds to see results.");
     }
 
     /**
-     * Unassign all shipments from a telemarketer.
+     * Unassign all shipments from a telemarketer (dispatched to background queue).
      */
     public function unassignAll(Request $request)
     {
@@ -274,12 +294,27 @@ class TelemarketingController extends Controller
             ->toArray();
 
         if (empty($shipmentIds)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No pending shipments to unassign.',
+                ]);
+            }
             return back()->with('info', 'No pending shipments to unassign.');
         }
 
-        $count = $this->telemarketingService->unassign($shipmentIds, $companyId);
+        UnassignShipmentsJob::dispatch($shipmentIds, $companyId);
 
-        return back()->with('success', "{$count} shipments unassigned.");
+        $count = count($shipmentIds);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Unassigning {$count} shipments in the background...",
+            ]);
+        }
+
+        return back()->with('success', "Unassigning {$count} shipments in the background. Refresh in a few seconds.");
     }
 
     // ────────────────────────────────────────────────────────────────

@@ -9,15 +9,18 @@
     <div class="py-6">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
 
-            @if(session('success'))
-                <div class="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
-            @endif
-            @if(session('info'))
-                <div class="mb-4 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">{{ session('info') }}</div>
-            @endif
-            @if(session('error'))
-                <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{{ session('error') }}</div>
-            @endif
+            {{-- Flash Messages --}}
+            <div id="flash-container">
+                @if(session('success'))
+                    <div class="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">{{ session('success') }}</div>
+                @endif
+                @if(session('info'))
+                    <div class="mb-4 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">{{ session('info') }}</div>
+                @endif
+                @if(session('error'))
+                    <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{{ session('error') }}</div>
+                @endif
+            </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -25,11 +28,10 @@
                 <div class="bg-white shadow rounded-lg">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-semibold text-gray-800">Manual Assignment</h3>
-                        <p class="text-sm text-gray-500 mt-1">Assign unassigned shipments to a telemarketer ({{ $unassignedCount }} unassigned)</p>
+                        <p class="text-sm text-gray-500 mt-1">Assign unassigned shipments to a telemarketer (<span id="unassigned-count">{{ $unassignedCount }}</span> unassigned)</p>
                     </div>
                     <div class="px-6 py-5">
-                        <form method="POST" action="{{ route('telemarketing.manual-assign') }}">
-                            @csrf
+                        <form id="manual-assign-form" onsubmit="return handleManualAssign(event)">
                             <div class="space-y-4">
                                 <div>
                                     <x-input-label for="telemarketer_id" value="Assign To *" />
@@ -65,7 +67,10 @@
                                     <input type="number" name="limit" id="limit" value="100" min="1" max="5000" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                 </div>
 
-                                <x-primary-button>Assign Shipments</x-primary-button>
+                                <button type="submit" id="btn-manual-assign" class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700 focus:bg-gray-700 active:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                                    <span class="btn-text">Assign Shipments</span>
+                                    <svg class="btn-spinner hidden animate-spin ml-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -93,6 +98,11 @@
                                             </p>
                                         </div>
                                         <div class="flex items-center space-x-2">
+                                            <button type="button" onclick="runSingleRule({{ $rule->id }}, this)"
+                                                class="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 inline-flex items-center">
+                                                <span class="btn-text">Run</span>
+                                                <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                            </button>
                                             <form method="POST" action="{{ route('telemarketing.toggle-rule', $rule) }}" class="inline">
                                                 @csrf
                                                 <button type="submit" class="text-xs px-2 py-1 rounded {{ $rule->is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200' }}">
@@ -175,14 +185,12 @@
             <div class="mt-6 bg-white shadow rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h3 class="text-lg font-semibold text-gray-800">Telemarketer Workload</h3>
-                    <form method="POST" action="{{ route('telemarketing.run-auto-assign') }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition"
-                                onclick="return confirm('Run auto-assignment for all active rules?')">
-                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                            Run Auto-Assign
-                        </button>
-                    </form>
+                    <button type="button" id="btn-run-all-rules" onclick="runAllRules(this)"
+                            class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition">
+                        <svg class="w-4 h-4 mr-1 btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        <svg class="btn-spinner hidden animate-spin mr-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        <span class="btn-text">Run Auto-Assign</span>
+                    </button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
@@ -216,11 +224,11 @@
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <a href="{{ route('telemarketing.queue', ['telemarketer_id' => $tm->id]) }}" class="text-indigo-600 hover:text-indigo-900 text-sm mr-2">View Queue</a>
-                                        <form method="POST" action="{{ route('telemarketing.unassign-all') }}" class="inline" onsubmit="return confirm('Unassign all pending shipments from {{ $tm->name }}?')">
-                                            @csrf
-                                            <input type="hidden" name="telemarketer_id" value="{{ $tm->id }}">
-                                            <button type="submit" class="text-red-600 hover:text-red-900 text-sm">Unassign All</button>
-                                        </form>
+                                        <button type="button" onclick="unassignAll({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                class="text-red-600 hover:text-red-900 text-sm inline-flex items-center">
+                                            <span class="btn-text">Unassign All</span>
+                                            <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                        </button>
                                     </td>
                                 </tr>
                             @endforeach
@@ -233,6 +241,174 @@
 
     @push('scripts')
     <script>
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+        // ── Helper: show toast notification ──
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('flash-container');
+            const colors = {
+                success: 'bg-green-50 border-green-200 text-green-700',
+                info: 'bg-blue-50 border-blue-200 text-blue-700',
+                error: 'bg-red-50 border-red-200 text-red-700',
+            };
+            const div = document.createElement('div');
+            div.className = `mb-4 border px-4 py-3 rounded-lg ${colors[type] || colors.info} transition-opacity duration-500`;
+            div.innerHTML = message;
+            container.prepend(div);
+
+            // Auto-remove after 6 seconds
+            setTimeout(() => {
+                div.style.opacity = '0';
+                setTimeout(() => div.remove(), 500);
+            }, 6000);
+        }
+
+        // ── Helper: toggle button loading state ──
+        function setLoading(btn, loading) {
+            const text = btn.querySelector('.btn-text');
+            const spinner = btn.querySelector('.btn-spinner');
+            const icon = btn.querySelector('.btn-icon');
+            if (loading) {
+                btn.disabled = true;
+                btn.classList.add('opacity-75', 'cursor-not-allowed');
+                if (text) text.textContent = 'Processing...';
+                if (spinner) spinner.classList.remove('hidden');
+                if (icon) icon.classList.add('hidden');
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                if (spinner) spinner.classList.add('hidden');
+                if (icon) icon.classList.remove('hidden');
+            }
+        }
+
+        // ── AJAX: Run all assignment rules ──
+        async function runAllRules(btn) {
+            if (!confirm('Run auto-assignment for all active rules?')) return;
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Running...';
+
+            try {
+                const res = await fetch('{{ route("telemarketing.run-auto-assign") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({}),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Run Auto-Assign';
+
+            // Auto-refresh page after 3 seconds to show updated counts
+            setTimeout(() => location.reload(), 3000);
+        }
+
+        // ── AJAX: Run a single rule ──
+        async function runSingleRule(ruleId, btn) {
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Running...';
+
+            try {
+                const res = await fetch('{{ route("telemarketing.run-auto-assign") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ rule_id: ruleId }),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Run';
+
+            setTimeout(() => location.reload(), 3000);
+        }
+
+        // ── AJAX: Manual assign ──
+        async function handleManualAssign(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn-manual-assign');
+            const form = document.getElementById('manual-assign-form');
+
+            const telemarketer = form.querySelector('[name=telemarketer_id]').value;
+            if (!telemarketer) {
+                showToast('Please select a telemarketer.', 'error');
+                return false;
+            }
+
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Assigning...';
+
+            try {
+                const formData = new FormData(form);
+                const body = {};
+                formData.forEach((v, k) => { if (v) body[k] = v; });
+
+                const res = await fetch('{{ route("telemarketing.manual-assign") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify(body),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Assign Shipments';
+
+            setTimeout(() => location.reload(), 3000);
+            return false;
+        }
+
+        // ── AJAX: Unassign all ──
+        async function unassignAll(telemarketerId, name, btn) {
+            if (!confirm(`Unassign all pending shipments from ${name}?`)) return;
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Unassigning...';
+
+            try {
+                const res = await fetch('{{ route("telemarketing.unassign-all") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ telemarketer_id: telemarketerId }),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Unassign All';
+
+            setTimeout(() => location.reload(), 3000);
+        }
+
+        // ── Toggle rule type fields ──
         function toggleRuleFields() {
             const ruleType = document.getElementById('rule_type').value;
             document.getElementById('status-field').classList.toggle('hidden', ruleType === 'delivered_age');
