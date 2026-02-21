@@ -8,6 +8,7 @@ use App\Models\RawJntRow;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Reader\Xlsx as XlsxReader;
 
 class FileParserService
 {
@@ -32,30 +33,54 @@ class FileParserService
      */
     protected function parseExcel(UploadedFile $file, ImportJob $importJob): int
     {
-        $spreadsheet = IOFactory::load($file->getPathname());
-        $worksheet = $spreadsheet->getActiveSheet();
-        $rows = $worksheet->toArray(null, true, true, true);
+        // Use a memory-efficient chunked reader for large files
+        $reader = new XlsxReader();
+        $reader->setReadDataOnly(true);
 
-        if (empty($rows)) {
+        // Load only the first sheet
+        $worksheetNames = $reader->listWorksheetNames($file->getPathname());
+        if (empty($worksheetNames)) {
             throw new \RuntimeException('The uploaded file is empty.');
         }
+        $reader->setLoadSheetsOnly($worksheetNames[0]);
 
-        // First row is headers
-        $headers = array_values(array_shift($rows));
-        $headers = array_map('trim', $headers);
+        $spreadsheet = $reader->load($file->getPathname());
+        $worksheet = $spreadsheet->getActiveSheet();
 
+        $headers = null;
         $count = 0;
         $batch = [];
 
-        foreach ($rows as $row) {
-            $rowData = array_combine($headers, array_values($row));
+        foreach ($worksheet->getRowIterator() as $rowObj) {
+            $cellIterator = $rowObj->getCellIterator();
+            $cellIterator->setIterateOnlyExistingCells(false);
+
+            $rowData = [];
+            foreach ($cellIterator as $cell) {
+                $rowData[] = $cell->getValue();
+            }
+
+            // First row is headers
+            if ($headers === null) {
+                $headers = array_map('trim', $rowData);
+                continue;
+            }
+
+            // Pad row if shorter than headers
+            while (count($rowData) < count($headers)) {
+                $rowData[] = '';
+            }
+            // Trim row if longer than headers
+            $rowData = array_slice($rowData, 0, count($headers));
+
+            $mapped = array_combine($headers, $rowData);
 
             // Skip completely empty rows
-            if ($this->isEmptyRow($rowData)) continue;
+            if ($this->isEmptyRow($mapped)) continue;
 
             $batch[] = [
                 'import_job_id' => $importJob->id,
-                'data' => json_encode($rowData),
+                'data' => json_encode($mapped),
                 'is_processed' => false,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -63,7 +88,7 @@ class FileParserService
 
             $count++;
 
-            // Insert in batches of 500
+            // Insert in batches of 500 and free memory
             if (count($batch) >= 500) {
                 $this->insertRawBatch($importJob->courier, $batch);
                 $batch = [];
@@ -74,6 +99,10 @@ class FileParserService
         if (!empty($batch)) {
             $this->insertRawBatch($importJob->courier, $batch);
         }
+
+        // Free memory
+        $spreadsheet->disconnectWorksheets();
+        unset($spreadsheet);
 
         return $count;
     }

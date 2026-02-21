@@ -111,8 +111,23 @@ class ImportController extends Controller
 
         try {
             if (in_array($extension, ['xlsx', 'xls'])) {
-                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getPathname());
+                // Read only the first row for header detection (memory efficient)
+                $reader = new \PhpOffice\PhpSpreadsheet\Reader\Xlsx();
+                $reader->setReadDataOnly(true);
+
+                // Use a read filter that only loads row 1
+                $filter = new class implements \PhpOffice\PhpSpreadsheet\Reader\IReadFilter {
+                    public function readCell(string $columnAddress, int $row, string $worksheetName = ''): bool
+                    {
+                        return $row === 1;
+                    }
+                };
+                $reader->setReadFilter($filter);
+
+                $spreadsheet = $reader->load($file->getPathname());
                 $headers = $spreadsheet->getActiveSheet()->toArray()[0] ?? [];
+                $spreadsheet->disconnectWorksheets();
+                unset($spreadsheet);
             } else {
                 $handle = fopen($file->getPathname(), 'r');
                 $headers = fgetcsv($handle) ?: [];
