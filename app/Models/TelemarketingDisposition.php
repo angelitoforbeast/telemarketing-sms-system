@@ -1,0 +1,43 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class TelemarketingDisposition extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'company_id',
+        'name',
+        'code',
+        'is_final',
+        'is_system',
+        'sort_order',
+    ];
+
+    protected $casts = [
+        'is_final' => 'boolean',
+        'is_system' => 'boolean',
+    ];
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function telemarketingLogs()
+    {
+        return $this->hasMany(TelemarketingLog::class, 'disposition_id');
+    }
+
+    public function scopeForCompany($query, ?int $companyId)
+    {
+        return $query->where(function ($q) use ($companyId) {
+            $q->whereNull('company_id') // system-wide dispositions
+              ->orWhere('company_id', $companyId);
+        });
+    }
+}
