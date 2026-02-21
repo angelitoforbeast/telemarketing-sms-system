@@ -1,206 +1,143 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Remittance Report</h2>
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight">Remittance</h2>
     </x-slot>
 
+    <style>
+        input.no-spin::-webkit-outer-spin-button,
+        input.no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input.no-spin[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    </style>
+
     <div class="py-6">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-4"
+             x-data="remitUI('{{ $periodStart->format('Y-m-d') }}','{{ $periodEnd->format('Y-m-d') }}')" x-init="init()">
 
-            {{-- Date Range Filter --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
-                <form method="GET" action="{{ route('remittance.index') }}" id="filterForm" class="flex flex-wrap items-end gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
-                        <input type="text" id="dateRange" name="date_range"
-                               class="border-gray-300 rounded-md shadow-sm text-sm w-72"
-                               placeholder="Select date range..." readonly>
-                        <input type="hidden" name="start_date" id="startDate" value="{{ $periodStart->format('Y-m-d') }}">
-                        <input type="hidden" name="end_date" id="endDate" value="{{ $periodEnd->format('Y-m-d') }}">
+            {{-- Filters --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-4">
+                <div class="grid md:grid-cols-3 gap-3 items-end">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-semibold mb-1">Date Range</label>
+                        <input id="remitRange" type="text" placeholder="Select date range"
+                               class="w-full border border-gray-300 p-2 rounded-md shadow-sm cursor-pointer bg-white text-sm" readonly>
+                        <div class="text-xs text-gray-500 mt-1" x-text="dateLabel"></div>
                     </div>
-                    <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
-                        Apply Filter
-                    </button>
-                    <a href="{{ route('remittance.index') }}"
-                       class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200 border border-gray-300">
-                        This Month
-                    </a>
-                    <a href="{{ route('remittance.index', ['preset' => 'last_month']) }}"
-                       class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200 border border-gray-300">
-                        Last Month
-                    </a>
-                </form>
-
-                <div class="mt-3 text-sm text-gray-500">
-                    Period: <strong>{{ $periodStart->format('M d, Y') }}</strong> to <strong>{{ $periodEnd->format('M d, Y') }}</strong>
-                    &mdash; COD Fee Rate: <strong>{{ number_format($codFeeRate * 100, 2) }}%</strong>,
-                    VAT Rate: <strong>{{ number_format($codVatRate * 100, 2) }}%</strong>
+                    <div class="flex gap-2 md:justify-end">
+                        <button class="px-3 py-2 rounded border text-sm hover:bg-gray-50" @click="thisMonth()">This Month</button>
+                        <button class="px-3 py-2 rounded border text-sm hover:bg-gray-50" @click="lastMonth()">Last Month</button>
+                    </div>
+                </div>
+                <div class="mt-2 text-xs text-gray-500">
+                    COD Fee Rate: <strong>{{ number_format($codFeeRate * 100, 2) }}%</strong> &middot;
+                    COD Fee VAT Rate: <strong>{{ number_format($codVatRate * 100, 2) }}%</strong>
                     @can('settings.manage')
-                        <a href="{{ route('settings.edit') }}" class="text-indigo-600 hover:underline ml-2">[Change]</a>
+                        <a href="{{ route('settings.edit') }}" class="text-indigo-600 hover:underline ml-1">[Change]</a>
                     @endcan
                 </div>
             </div>
 
-            {{-- Remittance Summary --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Remittance Summary</h3>
+            {{-- Summary Table --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="font-semibold text-gray-800">Summary</div>
+                    <div class="text-xs text-gray-500">
+                        Delivered by <em>signing_time</em> &middot; Pickups by <em>submission_time</em>
+                    </div>
+                </div>
 
-                {{-- Main computation display --}}
-                <div class="bg-gray-50 rounded-lg p-6 mb-4">
-                    <table class="w-full text-sm">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full border border-gray-200 bg-white text-xs">
+                        <thead class="bg-gray-50">
+                            <tr class="text-left">
+                                <th class="px-3 py-2 border-b">Date</th>
+                                <th class="px-3 py-2 border-b text-right">Delivered</th>
+                                <th class="px-3 py-2 border-b text-right">COD Sum</th>
+                                <th class="px-3 py-2 border-b text-right">COD Fee<br><span class="text-[10px] font-normal">({{ number_format($codFeeRate * 100, 2) }}%)</span></th>
+                                <th class="px-3 py-2 border-b text-right">COD Fee VAT<br><span class="text-[10px] font-normal">({{ number_format($codVatRate * 100, 2) }}% of Fee)</span></th>
+                                <th class="px-3 py-2 border-b text-right">Parcels Picked Up</th>
+                                <th class="px-3 py-2 border-b text-right">Total Shipping Cost</th>
+                                <th class="px-3 py-2 border-b text-right">Remittance</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            <tr>
-                                <td class="py-2 font-medium text-gray-700">COD Collected (Delivered, by Signing Time)</td>
-                                <td class="py-2 text-right text-lg font-bold text-green-700">&#8369;{{ number_format($grandTotals->total_cod, 2) }}</td>
-                            </tr>
-                            <tr class="border-t">
-                                <td class="py-2 text-gray-600 pl-4">− Shipping Fee (by Submission Time)</td>
-                                <td class="py-2 text-right text-red-600">&#8369;{{ number_format($grandTotals->total_sf, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="py-2 text-gray-600 pl-4">− Valuation Fee (by Submission Time)</td>
-                                <td class="py-2 text-right text-red-600">&#8369;{{ number_format($grandTotals->total_valuation_fee, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="py-2 text-gray-600 pl-4">− COD Fee ({{ number_format($codFeeRate * 100, 2) }}% of COD)</td>
-                                <td class="py-2 text-right text-red-600">&#8369;{{ number_format($grandTotals->cod_fee, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="py-2 text-gray-600 pl-4">− COD Fee VAT ({{ number_format($codVatRate * 100, 2) }}% of COD Fee)</td>
-                                <td class="py-2 text-right text-red-600">&#8369;{{ number_format($grandTotals->cod_fee_vat, 2) }}</td>
-                            </tr>
-                            <tr class="border-t">
-                                <td class="py-2 font-medium text-gray-700">Total Deductions</td>
-                                <td class="py-2 text-right text-lg font-bold text-red-700">&#8369;{{ number_format($grandTotals->total_deductions, 2) }}</td>
-                            </tr>
-                            <tr class="border-t-2 border-gray-400">
-                                <td class="py-3 font-bold text-gray-900 text-base">NET REMITTANCE</td>
-                                <td class="py-3 text-right text-2xl font-bold {{ $grandTotals->net_remittance >= 0 ? 'text-green-700' : 'text-red-700' }}">
-                                    &#8369;{{ number_format($grandTotals->net_remittance, 2) }}
-                                </td>
-                            </tr>
+                            @forelse ($rows as $r)
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-3 py-2 border-b whitespace-nowrap">{{ \Carbon\Carbon::parse($r['date'])->format('M d, Y (D)') }}</td>
+                                    <td class="px-3 py-2 border-b text-right">{{ number_format($r['delivered']) }}</td>
+                                    <td class="px-3 py-2 border-b text-right">&#8369;{{ number_format($r['cod_sum'], 2) }}</td>
+                                    <td class="px-3 py-2 border-b text-right">&#8369;{{ number_format($r['cod_fee'], 2) }}</td>
+                                    <td class="px-3 py-2 border-b text-right">&#8369;{{ number_format($r['cod_fee_vat'], 2) }}</td>
+                                    <td class="px-3 py-2 border-b text-right">{{ number_format($r['picked']) }}</td>
+                                    <td class="px-3 py-2 border-b text-right">&#8369;{{ number_format($r['ship_cost'], 2) }}</td>
+                                    <td class="px-3 py-2 border-b text-right font-semibold">&#8369;{{ number_format($r['remittance'], 2) }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td class="px-3 py-6 text-center text-gray-500" colspan="8">No data for the selected date(s).</td>
+                                </tr>
+                            @endforelse
                         </tbody>
+
+                        {{-- TOTALS with editable COD Fee & COD Fee VAT --}}
+                        <tfoot class="bg-gray-50"
+                               x-data="codFeeTotals({
+                                   codSum: {{ json_encode($totals['cod_sum']) }},
+                                   codFee: {{ json_encode($totals['cod_fee']) }},
+                                   codFeeVat: {{ json_encode($totals['cod_fee_vat']) }},
+                                   shipCost: {{ json_encode($totals['ship_cost']) }}
+                               })"
+                               x-init="init()">
+                            <tr>
+                                <th class="px-3 py-2 border-t text-right">TOTAL</th>
+                                <th class="px-3 py-2 border-t text-right">{{ number_format($totals['delivered']) }}</th>
+                                <th class="px-3 py-2 border-t text-right">&#8369;{{ number_format($totals['cod_sum'], 2) }}</th>
+
+                                {{-- Editable TOTAL COD Fee --}}
+                                <th class="px-3 py-2 border-t text-right">
+                                    <div class="flex items-center justify-end gap-1">
+                                        <input type="text" inputmode="decimal"
+                                               class="no-spin w-28 border rounded px-2 py-1 text-right text-xs"
+                                               x-model="codFeeInput"
+                                               @blur="formatFee()"
+                                               @keydown.enter.prevent="formatFee()">
+                                        <button type="button" class="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-100" @click="resetFee()">Reset</button>
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 mt-0.5" x-show="isFeeOverridden()">
+                                        overridden (was <span x-text="money(codFeeDefault)"></span>)
+                                    </div>
+                                </th>
+
+                                {{-- Editable TOTAL COD Fee VAT --}}
+                                <th class="px-3 py-2 border-t text-right">
+                                    <div class="flex items-center justify-end gap-1">
+                                        <input type="text" inputmode="decimal"
+                                               class="no-spin w-28 border rounded px-2 py-1 text-right text-xs"
+                                               x-model="codFeeVatInput"
+                                               @blur="formatVat()"
+                                               @keydown.enter.prevent="formatVat()">
+                                        <button type="button" class="text-[10px] px-1.5 py-0.5 border rounded hover:bg-gray-100" @click="resetVat()">Reset</button>
+                                    </div>
+                                    <div class="text-[10px] text-gray-500 mt-0.5" x-show="isVatOverridden()">
+                                        overridden (was <span x-text="money(codFeeVatDefault)"></span>)
+                                    </div>
+                                </th>
+
+                                <th class="px-3 py-2 border-t text-right">{{ number_format($totals['picked']) }}</th>
+                                <th class="px-3 py-2 border-t text-right">&#8369;{{ number_format($totals['ship_cost'], 2) }}</th>
+
+                                {{-- TOTAL Remittance reacts to overrides --}}
+                                <th class="px-3 py-2 border-t text-right font-semibold" x-text="money(remittanceEffective)"></th>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
 
-                {{-- Quick stats --}}
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div class="bg-blue-50 rounded-lg p-4">
-                        <p class="text-sm text-blue-600 font-medium">Delivered Parcels</p>
-                        <p class="text-2xl font-bold text-blue-800">{{ number_format($grandTotals->total_delivered) }}</p>
-                        <p class="text-xs text-blue-500">by Signing Time</p>
-                    </div>
-                    <div class="bg-green-50 rounded-lg p-4">
-                        <p class="text-sm text-green-600 font-medium">Total COD</p>
-                        <p class="text-2xl font-bold text-green-800">&#8369;{{ number_format($grandTotals->total_cod, 2) }}</p>
-                        <p class="text-xs text-green-500">by Signing Time</p>
-                    </div>
-                    <div class="bg-orange-50 rounded-lg p-4">
-                        <p class="text-sm text-orange-600 font-medium">Total SF</p>
-                        <p class="text-2xl font-bold text-orange-800">&#8369;{{ number_format($grandTotals->total_sf, 2) }}</p>
-                        <p class="text-xs text-orange-500">by Submission Time</p>
-                    </div>
-                    <div class="bg-purple-50 rounded-lg p-4">
-                        <p class="text-sm text-purple-600 font-medium">Net Remittance</p>
-                        <p class="text-2xl font-bold {{ $grandTotals->net_remittance >= 0 ? 'text-purple-800' : 'text-red-800' }}">&#8369;{{ number_format($grandTotals->net_remittance, 2) }}</p>
-                    </div>
+                <div class="text-[11px] text-gray-500 mt-3">
+                    <span class="font-semibold">Formulas:</span>
+                    COD Fee = <code>{{ number_format($codFeeRate * 100, 2) }}% &times; COD Sum</code> &middot;
+                    COD Fee VAT = <code>{{ number_format($codVatRate * 100, 2) }}% &times; COD Fee</code> &middot;
+                    Remittance = <code>COD Sum &minus; COD Fee &minus; COD Fee VAT &minus; Shipping Cost</code>
                 </div>
-            </div>
-
-            {{-- COD by Signing Time (Delivery Date) --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">COD by Delivery Date (Signing Time)</h3>
-                <p class="text-xs text-gray-500 mb-3">Period: {{ $periodStart->format('M d, Y') }} — {{ $periodEnd->format('M d, Y') }}</p>
-
-                @if($codBySigningDate->isEmpty())
-                    <p class="text-gray-500 text-sm">No delivered shipments found in this period.</p>
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">Date</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">Courier</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">Parcels</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">COD</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($codBySigningDate as $row)
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 whitespace-nowrap font-medium">{{ \Carbon\Carbon::parse($row->the_date)->format('M d, Y (D)') }}</td>
-                                        <td class="px-4 py-3 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $row->courier === 'jnt' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' }}">
-                                                {{ strtoupper($row->courier) }}
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-right">{{ number_format($row->total_parcels) }}</td>
-                                        <td class="px-4 py-3 text-right font-medium text-green-700">&#8369;{{ number_format($row->total_cod, 2) }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot class="bg-gray-100">
-                                <tr class="font-bold">
-                                    <td class="px-4 py-3" colspan="2">Total</td>
-                                    <td class="px-4 py-3 text-right">{{ number_format($codBySigningDate->sum('total_parcels')) }}</td>
-                                    <td class="px-4 py-3 text-right text-green-700">&#8369;{{ number_format($codBySigningDate->sum('total_cod'), 2) }}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                @endif
-            </div>
-
-            {{-- Rows by Submission Time --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Shipments by Submission Date</h3>
-                <p class="text-xs text-gray-500 mb-3">
-                    Showing: {{ $rowRangeStart->format('M d, Y') }} — {{ $rowRangeEnd->format('M d, Y') }}
-                    <span class="text-gray-400">(selected start − 30 days to selected end)</span>
-                </p>
-
-                @if($submissionRows->isEmpty())
-                    <p class="text-gray-500 text-sm">No shipments with submission time found in this range.</p>
-                @else
-                    <div class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">Submission Date</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">Courier</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">Parcels</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">COD</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">Shipping Fee</th>
-                                    <th class="px-4 py-3 text-right font-medium text-gray-500">Valuation Fee</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($submissionRows as $row)
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 whitespace-nowrap font-medium">{{ \Carbon\Carbon::parse($row->the_date)->format('M d, Y (D)') }}</td>
-                                        <td class="px-4 py-3 whitespace-nowrap">
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $row->courier === 'jnt' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800' }}">
-                                                {{ strtoupper($row->courier) }}
-                                            </span>
-                                        </td>
-                                        <td class="px-4 py-3 text-right">{{ number_format($row->total_parcels) }}</td>
-                                        <td class="px-4 py-3 text-right">&#8369;{{ number_format($row->total_cod, 2) }}</td>
-                                        <td class="px-4 py-3 text-right">&#8369;{{ number_format($row->total_sf, 2) }}</td>
-                                        <td class="px-4 py-3 text-right">&#8369;{{ number_format($row->total_valuation_fee, 2) }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot class="bg-gray-100">
-                                <tr class="font-bold">
-                                    <td class="px-4 py-3" colspan="2">Total</td>
-                                    <td class="px-4 py-3 text-right">{{ number_format($submissionRows->sum('total_parcels')) }}</td>
-                                    <td class="px-4 py-3 text-right">&#8369;{{ number_format($submissionRows->sum('total_cod'), 2) }}</td>
-                                    <td class="px-4 py-3 text-right">&#8369;{{ number_format($submissionRows->sum('total_sf'), 2) }}</td>
-                                    <td class="px-4 py-3 text-right">&#8369;{{ number_format($submissionRows->sum('total_valuation_fee'), 2) }}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                @endif
             </div>
 
         </div>
@@ -210,21 +147,145 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            flatpickr('#dateRange', {
-                mode: 'range',
-                dateFormat: 'Y-m-d',
-                defaultDate: ['{{ $periodStart->format("Y-m-d") }}', '{{ $periodEnd->format("Y-m-d") }}'],
-                maxDate: 'today',
-                onChange: function(selectedDates) {
-                    if (selectedDates.length === 2) {
-                        const fmt = d => d.toISOString().split('T')[0];
-                        document.getElementById('startDate').value = fmt(selectedDates[0]);
-                        document.getElementById('endDate').value = fmt(selectedDates[1]);
-                    }
+        function remitUI(startDefault, endDefault) {
+            return {
+                filters: { start_date: startDefault || '', end_date: endDefault || '' },
+                dateLabel: 'Select dates',
+
+                ymd(d) {
+                    const p = n => String(n).padStart(2, '0');
+                    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+                },
+                setDateLabel() {
+                    if (!this.filters.start_date || !this.filters.end_date) { this.dateLabel = 'Select dates'; return; }
+                    const s = new Date(this.filters.start_date + 'T00:00:00');
+                    const e = new Date(this.filters.end_date + 'T00:00:00');
+                    const M = i => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i];
+                    const same = s.getTime() === e.getTime();
+                    this.dateLabel = same
+                        ? `${M(s.getMonth())} ${s.getDate()}, ${s.getFullYear()}`
+                        : `${M(s.getMonth())} ${s.getDate()}, ${s.getFullYear()} – ${M(e.getMonth())} ${e.getDate()}, ${e.getFullYear()}`;
+                },
+                go() {
+                    const params = new URLSearchParams({
+                        start_date: this.filters.start_date || '',
+                        end_date: this.filters.end_date || ''
+                    });
+                    window.location = '{{ route("remittance.index") }}?' + params.toString();
+                },
+                thisMonth() {
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    this.filters.start_date = this.ymd(start);
+                    this.filters.end_date = this.ymd(now);
+                    this.setDateLabel(); this.go();
+                },
+                lastMonth() {
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+                    this.filters.start_date = this.ymd(start);
+                    this.filters.end_date = this.ymd(end);
+                    this.setDateLabel(); this.go();
+                },
+                init() {
+                    this.setDateLabel();
+                    window.flatpickr('#remitRange', {
+                        mode: 'range',
+                        dateFormat: 'Y-m-d',
+                        defaultDate: [this.filters.start_date, this.filters.end_date].filter(Boolean),
+                        onClose: (sel) => {
+                            if (sel.length === 2) {
+                                this.filters.start_date = this.ymd(sel[0]);
+                                this.filters.end_date = this.ymd(sel[1]);
+                            } else if (sel.length === 1) {
+                                this.filters.start_date = this.ymd(sel[0]);
+                                this.filters.end_date = this.ymd(sel[0]);
+                            } else { return; }
+                            this.setDateLabel(); this.go();
+                        },
+                        onReady: (_sd, _ds, inst) => {
+                            if (this.filters.start_date && this.filters.end_date) {
+                                inst.input.value = `${this.filters.start_date} to ${this.filters.end_date}`;
+                            }
+                        }
+                    });
                 }
-            });
-        });
+            }
+        }
+
+        function codFeeTotals(init) {
+            return {
+                codSum: Number(init.codSum || 0),
+                codFeeDefault: Number(init.codFee || 0),
+                codFeeVatDefault: Number(init.codFeeVat || 0),
+                shipCost: Number(init.shipCost || 0),
+
+                codFeeOverride: null,
+                codFeeVatOverride: null,
+                codFeeInput: '',
+                codFeeVatInput: '',
+
+                init() {
+                    this.codFeeInput = this.toFixed2(this.codFeeDefault);
+                    this.codFeeVatInput = this.toFixed2(this.codFeeVatDefault);
+                },
+
+                get codFeeEffective() { return this.codFeeOverride ?? this.codFeeDefault; },
+                get codFeeVatEffective() { return this.codFeeVatOverride ?? this.codFeeVatDefault; },
+                get remittanceEffective() {
+                    return +(this.codSum - this.codFeeEffective - this.codFeeVatEffective - this.shipCost).toFixed(2);
+                },
+
+                toFixed2(v) { return (Number(v || 0)).toFixed(2); },
+                money(v) { return '₱' + Number(v || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+                parseNum(s) {
+                    if (s == null) return null;
+                    let str = String(s).trim().replace(/₱/g, '').replace(/\s/g, '');
+                    if (!str) return null;
+                    if (str.includes(',') && !str.includes('.')) {
+                        str = str.replace(/,/g, '.');
+                    } else {
+                        str = str.replace(/,/g, '');
+                    }
+                    const v = parseFloat(str);
+                    return isNaN(v) ? null : v;
+                },
+
+                formatFee() {
+                    const v = this.parseNum(this.codFeeInput);
+                    if (v === null || !isFinite(v) || v < 0) {
+                        this.codFeeOverride = null;
+                        this.codFeeInput = this.toFixed2(this.codFeeDefault);
+                        return;
+                    }
+                    const eps = 0.005;
+                    this.codFeeOverride = (Math.abs(v - this.codFeeDefault) > eps) ? +v.toFixed(2) : null;
+                    this.codFeeInput = this.toFixed2(this.codFeeOverride ?? this.codFeeDefault);
+                },
+                formatVat() {
+                    const v = this.parseNum(this.codFeeVatInput);
+                    if (v === null || !isFinite(v) || v < 0) {
+                        this.codFeeVatOverride = null;
+                        this.codFeeVatInput = this.toFixed2(this.codFeeVatDefault);
+                        return;
+                    }
+                    const eps = 0.005;
+                    this.codFeeVatOverride = (Math.abs(v - this.codFeeVatDefault) > eps) ? +v.toFixed(2) : null;
+                    this.codFeeVatInput = this.toFixed2(this.codFeeVatOverride ?? this.codFeeVatDefault);
+                },
+                resetFee() {
+                    this.codFeeOverride = null;
+                    this.codFeeInput = this.toFixed2(this.codFeeDefault);
+                },
+                resetVat() {
+                    this.codFeeVatOverride = null;
+                    this.codFeeVatInput = this.toFixed2(this.codFeeVatDefault);
+                },
+                isFeeOverridden() { return this.codFeeOverride !== null; },
+                isVatOverridden() { return this.codFeeVatOverride !== null; },
+            }
+        }
     </script>
     @endpush
 </x-app-layout>

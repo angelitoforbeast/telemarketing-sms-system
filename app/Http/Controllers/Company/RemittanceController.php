@@ -12,18 +12,19 @@ use Illuminate\Support\Facades\DB;
 class RemittanceController extends Controller
 {
     /**
-     * Remittance report page.
+     * Remittance report — single unified table.
      *
-     * Computation:
-     *   Net Remittance = COD Sum (delivered, by signing_time)
-     *                  - SF (by submission_time)
-     *                  - COD Fee (COD Sum × COD Fee Rate)
-     *                  - COD Fee VAT (COD Fee × VAT Rate)
+     * Each row = one date, showing:
+     *   - Delivered count + COD Sum  (by signing_time)
+     *   - COD Fee, COD Fee VAT       (computed from COD Sum)
+     *   - Parcels Picked Up + SF     (by submission_time)
+     *   - Remittance = COD Sum − COD Fee − COD Fee VAT − SF
      *
-     * Row listing:
-     *   Based on submission_time.
-     *   Range: (lowest selected date − 30 days) to (highest selected date).
-     *   Default: This Month.
+     * Date range for rows:
+     *   (lowest selected date − 30 days) to (highest selected date)
+     *   based on whichever date appears (signing_time OR submission_time).
+     *
+     * Default: This Month.  Preset: last_month.
      */
     public function index(Request $request)
     {
@@ -32,8 +33,7 @@ class RemittanceController extends Controller
         $companyId = $user->company_id;
         $timezone = 'Asia/Manila';
 
-        // ── Date Range (for the "period" the user wants to view) ──
-        // Default: This Month (1st of current month to today)
+        // ── Date Range ──
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $periodStart = Carbon::parse($request->input('start_date'), $timezone)->startOfDay();
             $periodEnd   = Carbon::parse($request->input('end_date'), $timezone)->endOfDay();
@@ -46,6 +46,10 @@ class RemittanceController extends Controller
             $periodEnd   = Carbon::now($timezone)->endOfDay();
         }
 
+        // Extended range for row listing: start − 30 days
+        $rowRangeStart = (clone $periodStart)->subDays(30);
+        $rowRangeEnd   = $periodEnd;
+
         // Company COD fee settings
         $codFeeRate = (float) ($company->cod_fee_rate ?? 0.015);   // default 1.5%
         $codVatRate = (float) ($company->cod_vat_rate ?? 0.12);    // default 12%
@@ -53,90 +57,85 @@ class RemittanceController extends Controller
         // Get the "delivered" status ID
         $deliveredStatusId = ShipmentStatus::where('code', 'delivered')->value('id');
 
-        // ══════════════════════════════════════════════════════════
-        // 1. COD SUM — delivered shipments grouped by signing_time
-        //    (within the selected period)
-        // ══════════════════════════════════════════════════════════
-        $codBySigningDate = Shipment::forCompany($companyId)
+        // ── 1. Delivered data grouped by signing_time date ──
+        $deliveredByDate = Shipment::forCompany($companyId)
             ->where('normalized_status_id', $deliveredStatusId)
             ->whereNotNull('signing_time')
-            ->whereBetween('signing_time', [$periodStart, $periodEnd])
+            ->whereBetween('signing_time', [$rowRangeStart, $rowRangeEnd])
             ->select(
                 DB::raw("DATE(signing_time) as the_date"),
-                DB::raw("SUM(cod_amount) as total_cod"),
-                DB::raw("COUNT(*) as total_parcels"),
-                'courier'
+                DB::raw("COUNT(*) as delivered"),
+                DB::raw("SUM(cod_amount) as cod_sum")
             )
-            ->groupBy('the_date', 'courier')
-            ->orderBy('the_date', 'desc')
-            ->get();
+            ->groupBy('the_date')
+            ->get()
+            ->keyBy('the_date');
 
-        $grandCodSum = $codBySigningDate->sum('total_cod');
-
-        // ══════════════════════════════════════════════════════════
-        // 2. ROW LISTING — based on submission_time
-        //    Range: (lowest selected date − 30 days) to (highest selected date)
-        // ══════════════════════════════════════════════════════════
-        $rowRangeStart = (clone $periodStart)->subDays(30);
-        $rowRangeEnd   = $periodEnd;
-
-        $submissionRows = Shipment::forCompany($companyId)
+        // ── 2. Picked-up data grouped by submission_time date ──
+        $pickedByDate = Shipment::forCompany($companyId)
             ->whereNotNull('submission_time')
             ->whereBetween('submission_time', [$rowRangeStart, $rowRangeEnd])
             ->select(
                 DB::raw("DATE(submission_time) as the_date"),
-                DB::raw("SUM(shipping_cost) as total_sf"),
-                DB::raw("SUM(valuation_fee) as total_valuation_fee"),
-                DB::raw("SUM(cod_amount) as total_cod"),
-                DB::raw("COUNT(*) as total_parcels"),
-                'courier'
+                DB::raw("COUNT(*) as picked"),
+                DB::raw("SUM(shipping_cost) as ship_cost")
             )
-            ->groupBy('the_date', 'courier')
-            ->orderBy('the_date', 'desc')
-            ->get();
+            ->groupBy('the_date')
+            ->get()
+            ->keyBy('the_date');
 
-        // ══════════════════════════════════════════════════════════
-        // 3. SF SUM — shipping fees within the selected period
-        //    (submission_time within periodStart to periodEnd)
-        // ══════════════════════════════════════════════════════════
-        $sfInPeriod = Shipment::forCompany($companyId)
-            ->whereNotNull('submission_time')
-            ->whereBetween('submission_time', [$periodStart, $periodEnd])
-            ->sum('shipping_cost');
+        // ── 3. Merge into unified rows per date ──
+        $allDates = $deliveredByDate->keys()->merge($pickedByDate->keys())->unique()->sort()->reverse();
 
-        $valuationFeeInPeriod = Shipment::forCompany($companyId)
-            ->whereNotNull('submission_time')
-            ->whereBetween('submission_time', [$periodStart, $periodEnd])
-            ->sum('valuation_fee');
-
-        // ══════════════════════════════════════════════════════════
-        // 4. COMPUTE REMITTANCE
-        // ══════════════════════════════════════════════════════════
-        $codFee    = $grandCodSum * $codFeeRate;
-        $codFeeVat = $codFee * $codVatRate;
-        $totalDeductions = $sfInPeriod + $valuationFeeInPeriod + $codFee + $codFeeVat;
-        $netRemittance   = $grandCodSum - $totalDeductions;
-
-        $grandTotals = (object) [
-            'total_cod'           => $grandCodSum,
-            'total_sf'            => $sfInPeriod,
-            'total_valuation_fee' => $valuationFeeInPeriod,
-            'cod_fee'             => $codFee,
-            'cod_fee_vat'         => $codFeeVat,
-            'total_deductions'    => $totalDeductions,
-            'net_remittance'      => $netRemittance,
-            'total_delivered'     => $codBySigningDate->sum('total_parcels'),
-            'total_submitted'     => $submissionRows->sum('total_parcels'),
+        $rows = [];
+        $totals = [
+            'delivered'   => 0,
+            'cod_sum'     => 0,
+            'cod_fee'     => 0,
+            'cod_fee_vat' => 0,
+            'picked'      => 0,
+            'ship_cost'   => 0,
+            'remittance'  => 0,
         ];
 
+        foreach ($allDates as $date) {
+            $del = $deliveredByDate->get($date);
+            $pic = $pickedByDate->get($date);
+
+            $delivered = $del ? (int) $del->delivered : 0;
+            $codSum    = $del ? (float) $del->cod_sum : 0;
+            $picked    = $pic ? (int) $pic->picked : 0;
+            $shipCost  = $pic ? (float) $pic->ship_cost : 0;
+
+            $codFee    = $codSum * $codFeeRate;
+            $codFeeVat = $codFee * $codVatRate;
+            $remittance = $codSum - $codFee - $codFeeVat - $shipCost;
+
+            $rows[] = [
+                'date'        => $date,
+                'delivered'   => $delivered,
+                'cod_sum'     => $codSum,
+                'cod_fee'     => $codFee,
+                'cod_fee_vat' => $codFeeVat,
+                'picked'      => $picked,
+                'ship_cost'   => $shipCost,
+                'remittance'  => $remittance,
+            ];
+
+            $totals['delivered']   += $delivered;
+            $totals['cod_sum']     += $codSum;
+            $totals['cod_fee']     += $codFee;
+            $totals['cod_fee_vat'] += $codFeeVat;
+            $totals['picked']      += $picked;
+            $totals['ship_cost']   += $shipCost;
+            $totals['remittance']  += $remittance;
+        }
+
         return view('remittance.index', compact(
-            'codBySigningDate',
-            'submissionRows',
-            'grandTotals',
+            'rows',
+            'totals',
             'periodStart',
             'periodEnd',
-            'rowRangeStart',
-            'rowRangeEnd',
             'codFeeRate',
             'codVatRate',
             'company'
