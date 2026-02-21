@@ -61,13 +61,30 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/shipments/auto-assign', [ShipmentController::class, 'autoAssign'])->name('shipments.auto-assign');
         });
 
-        // Telemarketing
+        // ── Telemarketing Module ──
+        // Dashboard (all roles with telemarketing access)
         Route::middleware('can:telemarketing.view-queue')->group(function () {
+            Route::get('/telemarketing', [TelemarketingController::class, 'dashboard'])->name('telemarketing.dashboard');
             Route::get('/telemarketing/queue', [TelemarketingController::class, 'queue'])->name('telemarketing.queue');
+            Route::get('/telemarketing/next-call', [TelemarketingController::class, 'nextCall'])->name('telemarketing.next-call');
             Route::get('/telemarketing/call/{shipment}', [TelemarketingController::class, 'callForm'])->name('telemarketing.call');
         });
         Route::middleware('can:telemarketing.log-call')->group(function () {
             Route::post('/telemarketing/call/{shipment}', [TelemarketingController::class, 'logCall'])->name('telemarketing.log-call');
+        });
+        // Manager-only telemarketing routes
+        Route::middleware('can:telemarketing.view-all-logs')->group(function () {
+            Route::get('/telemarketing/assignments', [TelemarketingController::class, 'assignments'])->name('telemarketing.assignments');
+            Route::post('/telemarketing/manual-assign', [TelemarketingController::class, 'manualAssign'])->name('telemarketing.manual-assign');
+            Route::post('/telemarketing/unassign-all', [TelemarketingController::class, 'unassignAll'])->name('telemarketing.unassign-all');
+            Route::post('/telemarketing/run-auto-assign', [TelemarketingController::class, 'runAutoAssign'])->name('telemarketing.run-auto-assign');
+            Route::post('/telemarketing/rules', [TelemarketingController::class, 'storeRule'])->name('telemarketing.store-rule');
+            Route::post('/telemarketing/rules/{rule}/toggle', [TelemarketingController::class, 'toggleRule'])->name('telemarketing.toggle-rule');
+            Route::delete('/telemarketing/rules/{rule}', [TelemarketingController::class, 'deleteRule'])->name('telemarketing.delete-rule');
+            Route::get('/telemarketing/dispositions', [TelemarketingController::class, 'dispositions'])->name('telemarketing.dispositions');
+            Route::post('/telemarketing/dispositions', [TelemarketingController::class, 'storeDisposition'])->name('telemarketing.store-disposition');
+            Route::delete('/telemarketing/dispositions/{disposition}', [TelemarketingController::class, 'deleteDisposition'])->name('telemarketing.delete-disposition');
+            Route::get('/telemarketing/call-logs', [TelemarketingController::class, 'callLogs'])->name('telemarketing.call-logs');
         });
 
         // SMS Campaigns

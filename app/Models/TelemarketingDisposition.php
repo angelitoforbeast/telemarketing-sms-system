@@ -16,11 +16,17 @@ class TelemarketingDisposition extends Model
         'is_final',
         'is_system',
         'sort_order',
+        'color',
+        'description',
+        'requires_callback',
+        'marks_do_not_call',
     ];
 
     protected $casts = [
         'is_final' => 'boolean',
         'is_system' => 'boolean',
+        'requires_callback' => 'boolean',
+        'marks_do_not_call' => 'boolean',
     ];
 
     public function company()

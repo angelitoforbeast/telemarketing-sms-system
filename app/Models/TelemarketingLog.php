@@ -17,10 +17,13 @@ class TelemarketingLog extends Model
         'attempt_no',
         'callback_at',
         'phone_called',
+        'call_duration_seconds',
+        'call_started_at',
     ];
 
     protected $casts = [
         'callback_at' => 'datetime',
+        'call_started_at' => 'datetime',
     ];
 
     public function shipment()

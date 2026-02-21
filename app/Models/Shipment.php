@@ -42,6 +42,9 @@ class Shipment extends Model
         'last_contacted_at',
         'is_do_not_contact',
         'source_status_text',
+        'telemarketing_status',
+        'last_disposition_id',
+        'callback_scheduled_at',
     ];
 
     protected $casts = [
@@ -55,6 +58,7 @@ class Shipment extends Model
         'assigned_at' => 'datetime',
         'last_contacted_at' => 'datetime',
         'is_do_not_contact' => 'boolean',
+        'callback_scheduled_at' => 'datetime',
     ];
 
     // ── Relationships ──
@@ -119,6 +123,29 @@ class Shipment extends Model
     public function scopeContactable(Builder $query): Builder
     {
         return $query->where('is_do_not_contact', false)
+                     ->where('telemarketing_status', '!=', 'do_not_call')
                      ->whereNotNull('consignee_phone_1');
+    }
+
+    public function scopeTelemarketable(Builder $query): Builder
+    {
+        return $query->contactable()
+                     ->whereIn('telemarketing_status', ['pending', 'in_progress']);
+    }
+
+    public function scopeCallbackDue(Builder $query): Builder
+    {
+        return $query->whereNotNull('callback_scheduled_at')
+                     ->where('callback_scheduled_at', '<=', now());
+    }
+
+    public function scopeNeverContacted(Builder $query): Builder
+    {
+        return $query->where('telemarketing_attempt_count', 0);
+    }
+
+    public function lastDisposition()
+    {
+        return $this->belongsTo(TelemarketingDisposition::class, 'last_disposition_id');
     }
 }

@@ -62,15 +62,70 @@ class DatabaseSeeder extends Seeder
         );
         $ceo->assignRole('CEO');
 
-        $telemarketer = \App\Models\User::firstOrCreate(
-            ['email' => 'agent@demo.com'],
+        // ── 5 Demo Telemarketer Accounts ──
+        $telemarketers = [
+            ['email' => 'agent1@demo.com', 'name' => 'Maria Santos'],
+            ['email' => 'agent2@demo.com', 'name' => 'Juan Cruz'],
+            ['email' => 'agent3@demo.com', 'name' => 'Ana Reyes'],
+            ['email' => 'agent4@demo.com', 'name' => 'Carlo Garcia'],
+            ['email' => 'agent5@demo.com', 'name' => 'Liza Mendoza'],
+        ];
+
+        foreach ($telemarketers as $tmData) {
+            $tm = \App\Models\User::firstOrCreate(
+                ['email' => $tmData['email']],
+                [
+                    'name' => $tmData['name'],
+                    'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                    'company_id' => $company->id,
+                    'is_active' => true,
+                ]
+            );
+            $tm->assignRole('Telemarketer');
+        }
+
+        // ── Default Assignment Rules ──
+        $returnStatus = \App\Models\ShipmentStatus::where('code', 'returned')->first();
+        $forReturnStatus = \App\Models\ShipmentStatus::where('code', 'for_return')->first();
+
+        if ($returnStatus) {
+            \App\Models\TelemarketingAssignmentRule::firstOrCreate(
+                ['company_id' => $company->id, 'name' => 'Return Shipments'],
+                [
+                    'rule_type' => 'status_based',
+                    'status_id' => $returnStatus->id,
+                    'assignment_method' => 'round_robin',
+                    'is_active' => true,
+                    'priority' => 10,
+                    'max_attempts' => 5,
+                ]
+            );
+        }
+
+        if ($forReturnStatus) {
+            \App\Models\TelemarketingAssignmentRule::firstOrCreate(
+                ['company_id' => $company->id, 'name' => 'For Return Shipments'],
+                [
+                    'rule_type' => 'status_based',
+                    'status_id' => $forReturnStatus->id,
+                    'assignment_method' => 'round_robin',
+                    'is_active' => true,
+                    'priority' => 9,
+                    'max_attempts' => 5,
+                ]
+            );
+        }
+
+        \App\Models\TelemarketingAssignmentRule::firstOrCreate(
+            ['company_id' => $company->id, 'name' => 'Delivered 7+ Days (Reorder)'],
             [
-                'name' => 'Demo Agent',
-                'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                'company_id' => $company->id,
+                'rule_type' => 'delivered_age',
+                'days_threshold' => 7,
+                'assignment_method' => 'workload_based',
                 'is_active' => true,
+                'priority' => 5,
+                'max_attempts' => 3,
             ]
         );
-        $telemarketer->assignRole('Telemarketer');
     }
 }

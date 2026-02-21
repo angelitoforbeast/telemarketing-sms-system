@@ -27,7 +27,7 @@
                         @endcan
 
                         @can('telemarketing.view-queue')
-                        <x-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.*')">
+                        <x-nav-link :href="route('telemarketing.dashboard')" :active="request()->routeIs('telemarketing.*')">
                             Telemarketing
                         </x-nav-link>
                         @endcan
@@ -116,7 +116,7 @@
                 <x-responsive-nav-link :href="route('shipments.index')" :active="request()->routeIs('shipments.*')">Shipments</x-responsive-nav-link>
                 @endcan
                 @can('telemarketing.view-queue')
-                <x-responsive-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.*')">Telemarketing</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('telemarketing.dashboard')" :active="request()->routeIs('telemarketing.*')">Telemarketing</x-responsive-nav-link>
                 @endcan
                 @can('sms.campaigns.view')
                 <x-responsive-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">SMS Campaigns</x-responsive-nav-link>
