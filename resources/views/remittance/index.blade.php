@@ -41,7 +41,8 @@
                 <div class="flex items-center justify-between mb-3">
                     <div class="font-semibold text-gray-800">Summary</div>
                     <div class="text-xs text-gray-500">
-                        Delivered by <em>signing_time</em> &middot; Pickups by <em>submission_time</em>
+                        Data pool: <strong>{{ $poolStart->format('M d, Y') }}</strong> to <strong>{{ $poolEnd->format('M d, Y') }}</strong>
+                        (selected start &minus; 30 days) &middot; by <em>submission_time</em>
                     </div>
                 </div>
 
