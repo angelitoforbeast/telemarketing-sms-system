@@ -51,6 +51,7 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned Statuses</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Pending Queue</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Calls Today</th>
@@ -59,17 +60,22 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @forelse($stats['telemarketers'] as $tm)
-                                <tr class="hover:bg-gray-50">
+                                <tr class="hover:bg-gray-50 {{ !$tm->is_telemarketing_active ? 'opacity-50' : '' }}">
                                     <td class="px-6 py-4">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                                                <span class="text-xs font-bold text-indigo-600">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
+                                            <div class="flex-shrink-0 h-8 w-8 {{ $tm->is_telemarketing_active ? 'bg-indigo-100' : 'bg-gray-200' }} rounded-full flex items-center justify-center">
+                                                <span class="text-xs font-bold {{ $tm->is_telemarketing_active ? 'text-indigo-600' : 'text-gray-400' }}">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
                                             </div>
                                             <div class="ml-3">
                                                 <p class="text-sm font-medium text-gray-900">{{ $tm->name }}</p>
                                                 <p class="text-xs text-gray-500">{{ $tm->email }}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-center">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $tm->is_telemarketing_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}">
+                                            {{ $tm->is_telemarketing_active ? 'Active' : 'Inactive' }}
+                                        </span>
                                     </td>
                                     <td class="px-6 py-4">
                                         @php
@@ -99,16 +105,25 @@
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-center">
-                                        <a href="{{ route('telemarketing.queue', ['telemarketer_id' => $tm->id]) }}" class="text-indigo-600 hover:text-indigo-900 text-sm mr-3">View Queue</a>
-                                        <button type="button" onclick="unassignAll({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
-                                                class="text-red-600 hover:text-red-900 text-sm inline-flex items-center">
-                                            <span class="btn-text">Unassign All</span>
-                                            <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                        </button>
+                                        <div class="flex items-center justify-center space-x-2">
+                                            <a href="{{ route('telemarketing.queue', ['telemarketer_id' => $tm->id]) }}" class="text-indigo-600 hover:text-indigo-900 text-xs">Queue</a>
+                                            @if(!$tm->is_telemarketing_active && $tm->pending_count > 0)
+                                                <button type="button" onclick="redistributeAgent({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                        class="text-amber-600 hover:text-amber-900 text-xs inline-flex items-center">
+                                                    <span class="btn-text">Redistribute</span>
+                                                    <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                                </button>
+                                            @endif
+                                            <button type="button" onclick="unassignAll({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                    class="text-red-600 hover:text-red-900 text-xs inline-flex items-center">
+                                                <span class="btn-text">Unassign</span>
+                                                <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500">No active telemarketers found. Create telemarketer accounts in User Management.</td></tr>
+                                <tr><td colspan="6" class="px-6 py-8 text-center text-sm text-gray-500">No telemarketers found. Create telemarketer accounts in User Management.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -156,7 +171,7 @@
                                     <td class="px-6 py-4 text-center">
                                         <x-badge :color="$rule->is_active ? 'green' : 'gray'">{{ $rule->is_active ? 'Active' : 'Inactive' }}</x-badge>
                                     </td>
-                                    <td class="px-6 py-4 text-center space-x-2">
+                                    <td class="px-6 py-4 text-center">
                                         <button type="button" onclick="runSingleRule({{ $rule->id }}, this)"
                                                 class="text-green-600 hover:text-green-900 text-sm inline-flex items-center">
                                             <span class="btn-text">Run</span>
@@ -167,8 +182,7 @@
                                             <button type="submit" class="text-yellow-600 hover:text-yellow-900 text-sm">{{ $rule->is_active ? 'Disable' : 'Enable' }}</button>
                                         </form>
                                         <form method="POST" action="{{ route('telemarketing.delete-rule', $rule) }}" class="inline" onsubmit="return confirm('Delete this rule?')">
-                                            @csrf
-                                            @method('DELETE')
+                                            @csrf @method('DELETE')
                                             <button type="submit" class="text-red-600 hover:text-red-900 text-sm">Delete</button>
                                         </form>
                                     </td>
@@ -253,6 +267,24 @@
             setTimeout(() => location.reload(), 3000);
         }
 
+        async function redistributeAgent(agentId, agentName, btn) {
+            if (!confirm(`Redistribute all pending shipments from ${agentName} to other active agents?`)) return;
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Redistributing...';
+            try {
+                const res = await fetch('{{ route("telemarketing.redistribute-agent") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
+                    body: JSON.stringify({ telemarketer_id: agentId }),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) { showToast('An error occurred. Please try again.', 'error'); }
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Redistribute';
+            setTimeout(() => location.reload(), 2000);
+        }
+
         async function unassignAll(telemarketerId, name, btn) {
             if (!confirm(`Unassign all pending shipments from ${name}?`)) return;
             setLoading(btn, true);
@@ -267,7 +299,7 @@
                 showToast(data.message, data.success ? 'success' : 'info');
             } catch (e) { showToast('An error occurred. Please try again.', 'error'); }
             setLoading(btn, false);
-            btn.querySelector('.btn-text').textContent = 'Unassign All';
+            btn.querySelector('.btn-text').textContent = 'Unassign';
             setTimeout(() => location.reload(), 3000);
         }
     </script>

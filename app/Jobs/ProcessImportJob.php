@@ -74,6 +74,22 @@ class ProcessImportJob implements ShouldQueue
                 'error_summary'          => !empty($this->errors) ? $this->errors : null,
             ]);
 
+            // ── Post-Import: Process status changes and auto-assign ──
+            try {
+                $telemarketingService = app(\App\Services\Telemarketing\TelemarketingService::class);
+
+                // 1. Process status transitions (auto-reassign mismatched shipments)
+                $transitionSummary = $telemarketingService->processStatusChangesAfterImport($log->company_id);
+                Log::info("Post-import transition processing for import #{$log->id}: " . json_encode($transitionSummary));
+
+                // 2. Run auto-assign to pick up newly unassigned + new shipments
+                $assignSummary = $telemarketingService->autoAssignByRules($log->company_id);
+                $totalAssigned = collect($assignSummary)->sum('assigned');
+                Log::info("Post-import auto-assign for import #{$log->id}: {$totalAssigned} assigned.");
+            } catch (\Throwable $e) {
+                Log::warning("Post-import telemarketing processing failed for import #{$log->id}: {$e->getMessage()}");
+            }
+
         } catch (\Throwable $e) {
             Log::error("Import job #{$log->id} failed: {$e->getMessage()}", [
                 'trace' => $e->getTraceAsString(),
@@ -336,7 +352,7 @@ class ProcessImportJob implements ShouldQueue
                 $shipmentData['normalized_status_id'] = $statusId;
                 $shipmentData['last_status_update_at'] = $now;
 
-                if (isset($existing[$wb])) {
+                    if (isset($existing[$wb])) {
                     $existingShipment = $existing[$wb];
 
                     // Skip if already delivered or returned
@@ -344,6 +360,12 @@ class ProcessImportJob implements ShouldQueue
                     if (in_array($currentStatus, ['delivered', 'returned'])) {
                         $this->skipped++;
                         continue;
+                    }
+
+                    // Track previous status for transition rule processing
+                    $oldStatusId = $existingShipment->normalized_status_id;
+                    if ($oldStatusId !== $statusId) {
+                        $shipmentData['previous_status_id'] = $oldStatusId;
                     }
 
                     $existingShipment->update($shipmentData);

@@ -45,6 +45,8 @@ class Shipment extends Model
         'telemarketing_status',
         'last_disposition_id',
         'callback_scheduled_at',
+        'telemarketing_cooldown_until',
+        'previous_status_id',
     ];
 
     protected $casts = [
@@ -59,6 +61,7 @@ class Shipment extends Model
         'last_contacted_at' => 'datetime',
         'is_do_not_contact' => 'boolean',
         'callback_scheduled_at' => 'datetime',
+        'telemarketing_cooldown_until' => 'datetime',
     ];
 
     // ── Relationships ──
@@ -130,7 +133,11 @@ class Shipment extends Model
     public function scopeTelemarketable(Builder $query): Builder
     {
         return $query->contactable()
-                     ->whereIn('telemarketing_status', ['pending', 'in_progress']);
+                     ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+                     ->where(function ($q) {
+                         $q->whereNull('telemarketing_cooldown_until')
+                           ->orWhere('telemarketing_cooldown_until', '<=', now());
+                     });
     }
 
     public function scopeCallbackDue(Builder $query): Builder
@@ -147,5 +154,40 @@ class Shipment extends Model
     public function lastDisposition()
     {
         return $this->belongsTo(TelemarketingDisposition::class, 'last_disposition_id');
+    }
+
+    public function previousStatus()
+    {
+        return $this->belongsTo(ShipmentStatus::class, 'previous_status_id');
+    }
+
+    public function scopeOnCooldown(Builder $query): Builder
+    {
+        return $query->whereNotNull('telemarketing_cooldown_until')
+                     ->where('telemarketing_cooldown_until', '>', now());
+    }
+
+    /**
+     * Check if this shipment's last disposition allows re-calling on status change.
+     */
+    public function isRecallableOnStatusChange(): bool
+    {
+        // No disposition logged yet — always callable
+        if (!$this->last_disposition_id) return true;
+
+        $disposition = $this->lastDisposition;
+        if (!$disposition) return true;
+
+        // If disposition is final AND not recallable, don't re-assign
+        if ($disposition->is_final && !$disposition->is_recallable_on_status_change) {
+            return false;
+        }
+
+        // If marked do-not-call, don't re-assign
+        if ($disposition->marks_do_not_call) {
+            return false;
+        }
+
+        return true;
     }
 }

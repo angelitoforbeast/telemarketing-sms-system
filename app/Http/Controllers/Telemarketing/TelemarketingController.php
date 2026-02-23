@@ -8,6 +8,7 @@ use App\Jobs\RunAutoAssignJob;
 use App\Jobs\UnassignShipmentsJob;
 use App\Models\Shipment;
 use App\Models\ShipmentStatus;
+use App\Models\StatusTransitionRule;
 use App\Models\TelemarketingAssignmentRule;
 use App\Models\TelemarketingDisposition;
 use App\Models\User;
@@ -24,21 +25,16 @@ class TelemarketingController extends Controller
     //  TELEMARKETER DASHBOARD
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Telemarketer's personal dashboard with stats.
-     */
     public function dashboard(Request $request)
     {
         $user = $request->user();
         $companyId = $user->company_id;
 
-        // Telemarketer sees their own stats; managers see company overview
         if ($user->hasRole('Telemarketer')) {
             $stats = $this->telemarketingService->getUserStats($user->id, $companyId);
             return view('telemarketing.dashboard', compact('stats'));
         }
 
-        // Manager / Owner / CEO view
         $stats = $this->telemarketingService->getCompanyStats($companyId);
         $rules = TelemarketingAssignmentRule::forCompany($companyId)->orderBy('priority', 'desc')->get();
         return view('telemarketing.manager-dashboard', compact('stats', 'rules'));
@@ -48,27 +44,21 @@ class TelemarketingController extends Controller
     //  CALL QUEUE
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Show the telemarketer's call queue.
-     */
     public function queue(Request $request)
     {
         $user = $request->user();
         $companyId = $user->company_id;
 
-        // Telemarketers see only their queue; managers can see all or filter by telemarketer
         if ($user->hasRole('Telemarketer')) {
             $shipments = $this->telemarketingService->getQueue($user->id, $companyId, $request->all());
             $statuses = ShipmentStatus::orderBy('sort_order')->get();
             return view('telemarketing.queue', compact('shipments', 'statuses'));
         }
 
-        // Manager view: can filter by telemarketer
         $telemarketerId = $request->input('telemarketer_id');
         if ($telemarketerId) {
             $shipments = $this->telemarketingService->getQueue($telemarketerId, $companyId, $request->all());
         } else {
-            // Show all assigned shipments across all telemarketers
             $shipments = Shipment::with(['status', 'lastDisposition', 'assignedTo'])
                 ->forCompany($companyId)
                 ->whereNotNull('assigned_to_user_id')
@@ -83,9 +73,6 @@ class TelemarketingController extends Controller
         return view('telemarketing.queue', compact('shipments', 'statuses', 'telemarketers'));
     }
 
-    /**
-     * "Next Call" — auto-advance to the next shipment in queue.
-     */
     public function nextCall(Request $request)
     {
         $user = $request->user();
@@ -109,9 +96,6 @@ class TelemarketingController extends Controller
     //  CALL FORM
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Show the call form for a specific shipment.
-     */
     public function callForm(Shipment $shipment)
     {
         $this->authorizeAssignment($shipment);
@@ -121,7 +105,6 @@ class TelemarketingController extends Controller
         $dispositions = $this->telemarketingService->getDispositions(auth()->user()->company_id);
         $callHistory = $this->telemarketingService->getCallHistory($shipment->id);
 
-        // Get queue count for the progress indicator
         $queueCount = Shipment::forCompany(auth()->user()->company_id)
             ->assignedTo(auth()->id())
             ->telemarketable()
@@ -130,9 +113,6 @@ class TelemarketingController extends Controller
         return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'queueCount'));
     }
 
-    /**
-     * Log a call attempt.
-     */
     public function logCall(Request $request, Shipment $shipment)
     {
         $this->authorizeAssignment($shipment);
@@ -155,7 +135,6 @@ class TelemarketingController extends Controller
             $request->call_duration_seconds
         );
 
-        // If "Save & Next" was clicked, advance to next call
         if ($request->input('action') === 'save_next') {
             return redirect()->route('telemarketing.next-call', ['exclude' => $shipment->id]);
         }
@@ -168,9 +147,6 @@ class TelemarketingController extends Controller
     //  ASSIGNMENT MANAGEMENT (Manager/Owner)
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Show the assignment management page.
-     */
     public function assignments(Request $request)
     {
         $companyId = $request->user()->company_id;
@@ -194,11 +170,16 @@ class TelemarketingController extends Controller
             ->whereIn('telemarketing_status', ['pending', 'in_progress'])
             ->count();
 
+        $onCooldownCount = Shipment::forCompany($companyId)->onCooldown()->count();
+
         $statuses = ShipmentStatus::orderBy('sort_order')->get();
         $rules = TelemarketingAssignmentRule::forCompany($companyId)->orderBy('priority', 'desc')->get();
         $agentStatusMap = $this->telemarketingService->getAllAgentStatusAssignments($companyId);
+        $transitionRules = $this->telemarketingService->getTransitionRules($companyId);
 
-        return view('telemarketing.assignments', compact('telemarketers', 'unassignedCount', 'statuses', 'rules', 'agentStatusMap'));
+        return view('telemarketing.assignments', compact(
+            'telemarketers', 'unassignedCount', 'onCooldownCount', 'statuses', 'rules', 'agentStatusMap', 'transitionRules'
+        ));
     }
 
     /**
@@ -233,6 +214,65 @@ class TelemarketingController extends Controller
     }
 
     /**
+     * Toggle a telemarketer's active/inactive status for telemarketing.
+     */
+    public function toggleAgentActive(Request $request)
+    {
+        $request->validate([
+            'telemarketer_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $companyId = $request->user()->company_id;
+        $agent = User::forCompany($companyId)->findOrFail($request->telemarketer_id);
+
+        $newState = !$agent->is_telemarketing_active;
+        $agent->update(['is_telemarketing_active' => $newState]);
+
+        $statusLabel = $newState ? 'Active' : 'Inactive';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "{$agent->name} is now {$statusLabel} for telemarketing.",
+                'is_active' => $newState,
+            ]);
+        }
+
+        return back()->with('success', "{$agent->name} is now {$statusLabel} for telemarketing.");
+    }
+
+    /**
+     * Redistribute shipments from an agent to other active agents.
+     */
+    public function redistributeAgent(Request $request)
+    {
+        $request->validate([
+            'telemarketer_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $companyId = $request->user()->company_id;
+        $result = $this->telemarketingService->redistributeFromAgent(
+            (int) $request->telemarketer_id,
+            $companyId
+        );
+
+        $message = "Redistributed {$result['redistributed']} shipments.";
+        if ($result['unassigned'] > 0) {
+            $message .= " {$result['unassigned']} returned to unassigned pool (no eligible agents).";
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'result' => $result,
+            ]);
+        }
+
+        return back()->with('success', $message);
+    }
+
+    /**
      * Run auto-assignment based on rules (dispatched to background queue).
      */
     public function runAutoAssign(Request $request)
@@ -251,11 +291,12 @@ class TelemarketingController extends Controller
             ]);
         }
 
-        return back()->with('success', 'Auto-assignment is running in the background. Refresh in a few seconds to see results.');
+        return back()->with('success', 'Auto-assignment is running in the background.');
     }
 
     /**
      * Manual bulk assignment (dispatched to background queue).
+     * STRICT MODE: Validates status match before assigning.
      */
     public function manualAssign(Request $request)
     {
@@ -268,10 +309,31 @@ class TelemarketingController extends Controller
 
         $companyId = $request->user()->company_id;
 
+        // STRICT: Validate that the status matches the agent's assigned statuses
+        $validationError = $this->telemarketingService->validateManualAssign(
+            (int) $request->telemarketer_id,
+            $request->status_id ? (int) $request->status_id : null,
+            $companyId
+        );
+
+        if ($validationError) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $validationError,
+                ], 422);
+            }
+            return back()->with('error', $validationError);
+        }
+
         $query = Shipment::forCompany($companyId)
             ->unassigned()
             ->contactable()
-            ->whereIn('telemarketing_status', ['pending', 'in_progress']);
+            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+            ->where(function ($q) {
+                $q->whereNull('telemarketing_cooldown_until')
+                  ->orWhere('telemarketing_cooldown_until', '<=', now());
+            });
 
         if ($request->status_id) {
             $query->where('normalized_status_id', $request->status_id);
@@ -305,7 +367,7 @@ class TelemarketingController extends Controller
             ]);
         }
 
-        return back()->with('success', "Assigning {$count} shipments in the background. Refresh in a few seconds to see results.");
+        return back()->with('success', "Assigning {$count} shipments in the background.");
     }
 
     /**
@@ -346,16 +408,13 @@ class TelemarketingController extends Controller
             ]);
         }
 
-        return back()->with('success', "Unassigning {$count} shipments in the background. Refresh in a few seconds.");
+        return back()->with('success', "Unassigning {$count} shipments in the background.");
     }
 
     // ────────────────────────────────────────────────────────────────
     //  ASSIGNMENT RULES (CRUD)
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Store a new assignment rule.
-     */
     public function storeRule(Request $request)
     {
         $request->validate([
@@ -376,9 +435,6 @@ class TelemarketingController extends Controller
         return back()->with('success', 'Assignment rule created.');
     }
 
-    /**
-     * Toggle an assignment rule active/inactive.
-     */
     public function toggleRule(TelemarketingAssignmentRule $rule)
     {
         if ($rule->company_id !== auth()->user()->company_id) {
@@ -390,9 +446,6 @@ class TelemarketingController extends Controller
         return back()->with('success', "Rule '{$rule->name}' " . ($rule->is_active ? 'activated' : 'deactivated') . '.');
     }
 
-    /**
-     * Delete an assignment rule.
-     */
     public function deleteRule(TelemarketingAssignmentRule $rule)
     {
         if ($rule->company_id !== auth()->user()->company_id) {
@@ -405,12 +458,66 @@ class TelemarketingController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────────
+    //  STATUS TRANSITION RULES (CRUD)
+    // ────────────────────────────────────────────────────────────────
+
+    public function storeTransitionRule(Request $request)
+    {
+        $request->validate([
+            'from_status_id' => 'nullable|integer|exists:shipment_statuses,id',
+            'to_status_id' => 'nullable|integer|exists:shipment_statuses,id',
+            'action' => 'required|in:auto_reassign,auto_unassign,mark_completed,no_action',
+            'reset_attempts' => 'boolean',
+            'cooldown_days' => 'nullable|integer|min:0|max:365',
+            'priority' => 'nullable|integer|min:0|max:100',
+            'description' => 'nullable|string|max:255',
+        ]);
+
+        $companyId = $request->user()->company_id;
+
+        // Check for duplicate
+        $exists = StatusTransitionRule::forCompany($companyId)
+            ->where('from_status_id', $request->from_status_id)
+            ->where('to_status_id', $request->to_status_id)
+            ->exists();
+
+        if ($exists) {
+            return back()->with('error', 'A rule for this status transition already exists.');
+        }
+
+        $this->telemarketingService->createTransitionRule($companyId, $request->only([
+            'from_status_id', 'to_status_id', 'action', 'reset_attempts', 'cooldown_days', 'priority', 'description'
+        ]));
+
+        return back()->with('success', 'Status transition rule created.');
+    }
+
+    public function toggleTransitionRule(StatusTransitionRule $transitionRule)
+    {
+        if ($transitionRule->company_id !== auth()->user()->company_id) {
+            abort(403);
+        }
+
+        $transitionRule->update(['is_active' => !$transitionRule->is_active]);
+
+        return back()->with('success', 'Transition rule ' . ($transitionRule->is_active ? 'activated' : 'deactivated') . '.');
+    }
+
+    public function deleteTransitionRule(StatusTransitionRule $transitionRule)
+    {
+        if ($transitionRule->company_id !== auth()->user()->company_id) {
+            abort(403);
+        }
+
+        $this->telemarketingService->deleteTransitionRule($transitionRule);
+
+        return back()->with('success', 'Transition rule deleted.');
+    }
+
+    // ────────────────────────────────────────────────────────────────
     //  DISPOSITIONS MANAGEMENT
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * Show disposition management page.
-     */
     public function dispositions(Request $request)
     {
         $companyId = $request->user()->company_id;
@@ -419,9 +526,6 @@ class TelemarketingController extends Controller
         return view('telemarketing.dispositions', compact('dispositions'));
     }
 
-    /**
-     * Store a new custom disposition.
-     */
     public function storeDisposition(Request $request)
     {
         $request->validate([
@@ -432,20 +536,18 @@ class TelemarketingController extends Controller
             'is_final' => 'boolean',
             'requires_callback' => 'boolean',
             'marks_do_not_call' => 'boolean',
+            'is_recallable_on_status_change' => 'boolean',
             'sort_order' => 'nullable|integer|min:0',
         ]);
 
         $this->telemarketingService->createDisposition(
             $request->user()->company_id,
-            $request->only(['name', 'code', 'color', 'description', 'is_final', 'requires_callback', 'marks_do_not_call', 'sort_order'])
+            $request->only(['name', 'code', 'color', 'description', 'is_final', 'requires_callback', 'marks_do_not_call', 'is_recallable_on_status_change', 'sort_order'])
         );
 
         return back()->with('success', 'Custom disposition created.');
     }
 
-    /**
-     * Delete a custom disposition.
-     */
     public function deleteDisposition(TelemarketingDisposition $disposition)
     {
         if ($disposition->is_system) {
@@ -465,9 +567,6 @@ class TelemarketingController extends Controller
     //  CALL LOGS (Manager View)
     // ────────────────────────────────────────────────────────────────
 
-    /**
-     * View all call logs for the company.
-     */
     public function callLogs(Request $request)
     {
         $companyId = $request->user()->company_id;
@@ -476,17 +575,14 @@ class TelemarketingController extends Controller
             ->whereHas('shipment', fn ($q) => $q->forCompany($companyId))
             ->orderBy('created_at', 'desc');
 
-        // Filter by telemarketer
         if ($request->filled('telemarketer_id')) {
             $query->where('user_id', $request->telemarketer_id);
         }
 
-        // Filter by disposition
         if ($request->filled('disposition_id')) {
             $query->where('disposition_id', $request->disposition_id);
         }
 
-        // Filter by date
         if ($request->filled('date_from')) {
             $query->where('created_at', '>=', $request->date_from);
         }
@@ -514,7 +610,6 @@ class TelemarketingController extends Controller
             abort(403);
         }
 
-        // Telemarketers can only access their own assigned shipments
         if ($user->hasRole('Telemarketer') && $shipment->assigned_to_user_id !== $user->id) {
             abort(403, 'This shipment is not assigned to you.');
         }

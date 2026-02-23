@@ -19,6 +19,7 @@ class User extends Authenticatable
         'password',
         'company_id',
         'is_active',
+        'is_telemarketing_active',
     ];
 
     protected $hidden = [
@@ -30,6 +31,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'is_active' => 'boolean',
+        'is_telemarketing_active' => 'boolean',
     ];
 
     // ── Relationships ──
@@ -75,6 +77,11 @@ class User extends Authenticatable
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
+    }
+
+    public function scopeTelemarketingActive($query)
+    {
+        return $query->where('is_telemarketing_active', true);
     }
 
     public function scopeForCompany($query, $companyId)

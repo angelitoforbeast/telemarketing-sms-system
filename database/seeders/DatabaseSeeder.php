@@ -142,10 +142,115 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        // ── Default Status Transition Rules ──
+        $deliveredStatus = \App\Models\ShipmentStatus::where('code', 'delivered')->first();
+        $failedDeliveryStatus = \App\Models\ShipmentStatus::where('code', 'failed_delivery')->first();
+        $inTransitStatus = \App\Models\ShipmentStatus::where('code', 'in_transit')->first();
+        $closedStatus = \App\Models\ShipmentStatus::where('code', 'closed')->first();
+        $deliveringStatus = \App\Models\ShipmentStatus::where('code', 'delivering')->first();
+
+        $transitionRules = [
+            // For Return → Returned: reassign to Returned agent
+            [
+                'from_status_id' => $forReturnStatus?->id,
+                'to_status_id' => $returnStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 0,
+                'priority' => 10,
+                'description' => 'When For Return becomes Returned, reassign to Returned agent',
+            ],
+            // Returned → For Return: reassign to For Return agent
+            [
+                'from_status_id' => $returnStatus?->id,
+                'to_status_id' => $forReturnStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 0,
+                'priority' => 10,
+                'description' => 'When Returned becomes For Return, reassign to For Return agent',
+            ],
+            // For Return → Delivered: reassign with 7-day cooldown (reorder opportunity)
+            [
+                'from_status_id' => $forReturnStatus?->id,
+                'to_status_id' => $deliveredStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 7,
+                'priority' => 5,
+                'description' => 'When For Return becomes Delivered, wait 7 days then assign for reorder call',
+            ],
+            // Returned → Delivered: reassign with 7-day cooldown (reorder opportunity)
+            [
+                'from_status_id' => $returnStatus?->id,
+                'to_status_id' => $deliveredStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 7,
+                'priority' => 5,
+                'description' => 'When Returned becomes Delivered, wait 7 days then assign for reorder call',
+            ],
+            // Returned → In Transit: unassign (back in transit, no call needed)
+            [
+                'from_status_id' => $returnStatus?->id,
+                'to_status_id' => $inTransitStatus?->id,
+                'action' => 'auto_unassign',
+                'reset_attempts' => false,
+                'cooldown_days' => 0,
+                'priority' => 8,
+                'description' => 'When Returned goes back to In Transit, unassign (no call needed)',
+            ],
+            // Any → Closed: mark completed
+            [
+                'from_status_id' => null,
+                'to_status_id' => $closedStatus?->id,
+                'action' => 'mark_completed',
+                'reset_attempts' => false,
+                'cooldown_days' => 0,
+                'priority' => 20,
+                'description' => 'When any status becomes Closed, mark as completed (no more calls)',
+            ],
+            // Delivered → For Return: reassign to For Return agent
+            [
+                'from_status_id' => $deliveredStatus?->id,
+                'to_status_id' => $forReturnStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 0,
+                'priority' => 10,
+                'description' => 'When Delivered becomes For Return, reassign to For Return agent',
+            ],
+            // Failed Delivery → For Return: reassign to For Return agent
+            [
+                'from_status_id' => $failedDeliveryStatus?->id,
+                'to_status_id' => $forReturnStatus?->id,
+                'action' => 'auto_reassign',
+                'reset_attempts' => true,
+                'cooldown_days' => 0,
+                'priority' => 9,
+                'description' => 'When Failed Delivery becomes For Return, reassign to For Return agent',
+            ],
+        ];
+
+        foreach ($transitionRules as $rule) {
+            // Skip rules where a required status wasn't found
+            if (isset($rule['to_status_id']) && $rule['to_status_id'] === null) continue;
+
+            \App\Models\StatusTransitionRule::firstOrCreate(
+                [
+                    'company_id' => $company->id,
+                    'from_status_id' => $rule['from_status_id'],
+                    'to_status_id' => $rule['to_status_id'],
+                ],
+                array_merge($rule, [
+                    'company_id' => $company->id,
+                    'is_active' => true,
+                ])
+            );
+        }
+
         // ── Demo Agent Status Assignments ──
         // Assign specific statuses to each telemarketer for demo purposes
-        $deliveredStatus = \App\Models\ShipmentStatus::where('code', 'delivered')->first();
-
         if (count($createdTelemarketers) >= 5 && $returnStatus && $forReturnStatus && $deliveredStatus) {
             // Agent 1 & 2: Returned shipments only
             \App\Models\TelemarketerStatusAssignment::firstOrCreate([

@@ -20,6 +20,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Customer confirmed they will accept the delivery',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => false, // Final positive — no need to re-call
             ],
             [
                 'name' => 'Answered - Request Redeliver',
@@ -31,6 +32,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Customer wants the parcel redelivered',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => false, // Already resolved
             ],
             [
                 'name' => 'Answered - Refused / RTS',
@@ -42,6 +44,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Customer refused the delivery, return to sender',
                 'requires_callback' => false,
                 'marks_do_not_call' => true,
+                'is_recallable_on_status_change' => false, // Customer said no — don't call again
             ],
             [
                 'name' => 'Answered - Callback Requested',
@@ -53,6 +56,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Customer asked to be called back at a later time',
                 'requires_callback' => true,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => true, // Status changed, may need new call
             ],
             [
                 'name' => 'Answered - Reorder Interest',
@@ -64,6 +68,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Customer expressed interest in reordering',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => false, // Success — done
             ],
             [
                 'name' => 'No Answer',
@@ -75,6 +80,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'No one picked up the call',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => true, // Never reached — try again
             ],
             [
                 'name' => 'Busy',
@@ -86,6 +92,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Line was busy',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => true, // Never reached — try again
             ],
             [
                 'name' => 'Wrong Number',
@@ -97,6 +104,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Phone number is incorrect or belongs to someone else',
                 'requires_callback' => false,
                 'marks_do_not_call' => true,
+                'is_recallable_on_status_change' => false, // Wrong number won't change
             ],
             [
                 'name' => 'Not in Service',
@@ -108,6 +116,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Phone number is no longer in service',
                 'requires_callback' => false,
                 'marks_do_not_call' => true,
+                'is_recallable_on_status_change' => false, // Dead number
             ],
             [
                 'name' => 'Voicemail',
@@ -119,6 +128,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Call went to voicemail',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => true, // Never reached — try again
             ],
             [
                 'name' => 'Other',
@@ -130,6 +140,7 @@ class TelemarketingDispositionSeeder extends Seeder
                 'description' => 'Other outcome not listed above',
                 'requires_callback' => false,
                 'marks_do_not_call' => false,
+                'is_recallable_on_status_change' => true, // Unclear outcome — allow re-call
             ],
         ];
 

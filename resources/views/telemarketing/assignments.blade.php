@@ -23,7 +23,7 @@
             </div>
 
             {{-- ═══════════════════════════════════════════════════════ --}}
-            {{-- AGENT STATUS ASSIGNMENTS (NEW) --}}
+            {{-- AGENT STATUS ASSIGNMENTS --}}
             {{-- ═══════════════════════════════════════════════════════ --}}
             <div class="mb-6 bg-white shadow rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200">
@@ -35,6 +35,7 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 @foreach($statuses as $status)
                                     <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{{ $status->name }}</th>
                                 @endforeach
@@ -43,16 +44,31 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($telemarketers as $tm)
-                                <tr class="hover:bg-gray-50" id="agent-row-{{ $tm->id }}">
+                                <tr class="hover:bg-gray-50 {{ !$tm->is_telemarketing_active ? 'opacity-50' : '' }}" id="agent-row-{{ $tm->id }}">
                                     <td class="px-6 py-3">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                                                <span class="text-xs font-bold text-indigo-600">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
+                                            <div class="flex-shrink-0 h-8 w-8 {{ $tm->is_telemarketing_active ? 'bg-indigo-100' : 'bg-gray-200' }} rounded-full flex items-center justify-center">
+                                                <span class="text-xs font-bold {{ $tm->is_telemarketing_active ? 'text-indigo-600' : 'text-gray-400' }}">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
                                             </div>
                                             <div class="ml-3">
                                                 <p class="text-sm font-medium text-gray-900">{{ $tm->name }}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        {{-- Active/Inactive Toggle --}}
+                                        <button type="button"
+                                                onclick="toggleAgentActive({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 {{ $tm->is_telemarketing_active ? 'bg-green-500' : 'bg-gray-300' }}"
+                                                data-active="{{ $tm->is_telemarketing_active ? '1' : '0' }}"
+                                                role="switch"
+                                                aria-checked="{{ $tm->is_telemarketing_active ? 'true' : 'false' }}"
+                                                title="{{ $tm->is_telemarketing_active ? 'Active — click to deactivate' : 'Inactive — click to activate' }}">
+                                            <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out {{ $tm->is_telemarketing_active ? 'translate-x-5' : 'translate-x-0' }}"></span>
+                                        </button>
+                                        <span class="block text-xs mt-0.5 {{ $tm->is_telemarketing_active ? 'text-green-600' : 'text-gray-400' }}" id="active-label-{{ $tm->id }}">
+                                            {{ $tm->is_telemarketing_active ? 'Active' : 'Inactive' }}
+                                        </span>
                                     </td>
                                     @foreach($statuses as $status)
                                         <td class="px-3 py-3 text-center">
@@ -87,7 +103,7 @@
                 </div>
                 <div class="px-6 py-3 bg-gray-50 border-t border-gray-200">
                     <p class="text-xs text-gray-500">
-                        <strong>Tip:</strong> If no checkboxes are selected for an agent, they can handle <strong>all</strong> statuses. Check specific statuses to restrict what an agent sees in their queue. Auto-assignment rules will also respect these settings.
+                        <strong>Tip:</strong> Toggle the switch to set an agent Active/Inactive. Inactive agents won't receive new assignments. Check specific statuses to restrict what an agent sees.
                     </p>
                 </div>
             </div>
@@ -98,7 +114,13 @@
                 <div class="bg-white shadow rounded-lg">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-semibold text-gray-800">Manual Assignment</h3>
-                        <p class="text-sm text-gray-500 mt-1">Assign unassigned shipments to a telemarketer (<span id="unassigned-count">{{ $unassignedCount }}</span> unassigned)</p>
+                        <p class="text-sm text-gray-500 mt-1">
+                            Assign unassigned shipments to a telemarketer
+                            (<span id="unassigned-count">{{ $unassignedCount }}</span> unassigned
+                            @if($onCooldownCount > 0)
+                                , <span class="text-amber-600">{{ $onCooldownCount }} on cooldown</span>
+                            @endif)
+                        </p>
                     </div>
                     <div class="px-6 py-5">
                         <form id="manual-assign-form" onsubmit="return handleManualAssign(event)">
@@ -108,7 +130,11 @@
                                     <select name="telemarketer_id" id="telemarketer_id" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                         <option value="">-- Select Telemarketer --</option>
                                         @foreach($telemarketers as $tm)
-                                            <option value="{{ $tm->id }}">{{ $tm->name }} ({{ $tm->pending_count }} pending)</option>
+                                            <option value="{{ $tm->id }}"
+                                                    data-active="{{ $tm->is_telemarketing_active ? '1' : '0' }}"
+                                                    data-statuses="{{ json_encode($agentStatusMap[$tm->id] ?? []) }}">
+                                                {{ $tm->name }} ({{ $tm->pending_count }} pending) {{ !$tm->is_telemarketing_active ? '⛔ INACTIVE' : '' }}
+                                            </option>
                                         @endforeach
                                     </select>
                                 </div>
@@ -121,6 +147,11 @@
                                             <option value="{{ $status->id }}">{{ $status->name }}</option>
                                         @endforeach
                                     </select>
+                                </div>
+
+                                {{-- Strict Assign Warning --}}
+                                <div id="strict-assign-warning" class="hidden bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                                    <strong>⚠ Status Mismatch:</strong> <span id="strict-assign-msg"></span>
                                 </div>
 
                                 <div>
@@ -154,7 +185,6 @@
                     </div>
                     <div class="px-6 py-5">
 
-                        {{-- Existing Rules --}}
                         @if($rules->isNotEmpty())
                             <div class="space-y-3 mb-6">
                                 @foreach($rules as $rule)
@@ -199,7 +229,6 @@
                                         <x-input-label for="rule_name" value="Rule Name *" />
                                         <input type="text" name="name" id="rule_name" required placeholder="e.g., Return Shipments" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                     </div>
-
                                     <div class="grid grid-cols-2 gap-3">
                                         <div>
                                             <x-input-label for="rule_type" value="Rule Type *" />
@@ -216,7 +245,6 @@
                                             </select>
                                         </div>
                                     </div>
-
                                     <div id="status-field">
                                         <x-input-label for="rule_status_id" value="Target Status" />
                                         <select name="status_id" id="rule_status_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
@@ -226,12 +254,10 @@
                                             @endforeach
                                         </select>
                                     </div>
-
                                     <div id="days-field" class="hidden">
                                         <x-input-label for="days_threshold" value="Days Since Delivery" />
                                         <input type="number" name="days_threshold" id="days_threshold" value="7" min="1" max="365" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                     </div>
-
                                     <div class="grid grid-cols-2 gap-3">
                                         <div>
                                             <x-input-label for="max_attempts" value="Max Attempts" />
@@ -242,7 +268,6 @@
                                             <input type="number" name="priority" id="priority" value="0" min="0" max="100" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
                                         </div>
                                     </div>
-
                                     <x-primary-button>Add Rule</x-primary-button>
                                 </div>
                             </form>
@@ -251,7 +276,178 @@
                 </div>
             </div>
 
-            {{-- Telemarketer Workload Summary --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            {{-- STATUS TRANSITION RULES --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            <div class="mt-6 bg-white shadow rounded-lg overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-800">Status Transition Rules</h3>
+                    <p class="text-sm text-gray-500 mt-1">Define what happens when a shipment's status changes during import. Controls auto-reassignment, cooldowns, and attempt resets.</p>
+                </div>
+                <div class="px-6 py-5">
+
+                    {{-- Existing Transition Rules --}}
+                    @if($transitionRules->isNotEmpty())
+                        <div class="overflow-x-auto mb-6">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">From Status</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">To Status</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Reset Attempts</th>
+                                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Cooldown</th>
+                                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    @foreach($transitionRules as $tr)
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-2">
+                                                @if($tr->fromStatus)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">{{ $tr->fromStatus->name }}</span>
+                                                @else
+                                                    <span class="text-gray-400 text-xs">Any</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-4 py-2">
+                                                @if($tr->toStatus)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">{{ $tr->toStatus->name }}</span>
+                                                @else
+                                                    <span class="text-gray-400 text-xs">Any</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-4 py-2">
+                                                @php
+                                                    $actionColors = [
+                                                        'auto_reassign' => 'bg-green-100 text-green-700',
+                                                        'auto_unassign' => 'bg-yellow-100 text-yellow-700',
+                                                        'mark_completed' => 'bg-blue-100 text-blue-700',
+                                                        'no_action' => 'bg-gray-100 text-gray-600',
+                                                    ];
+                                                @endphp
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $actionColors[$tr->action] ?? 'bg-gray-100 text-gray-600' }}">
+                                                    {{ ucfirst(str_replace('_', ' ', $tr->action)) }}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center">
+                                                @if($tr->reset_attempts)
+                                                    <span class="text-green-600">✓ Yes</span>
+                                                @else
+                                                    <span class="text-gray-400">—</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-4 py-2 text-center">
+                                                @if($tr->cooldown_days > 0)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">{{ $tr->cooldown_days }} day{{ $tr->cooldown_days > 1 ? 's' : '' }}</span>
+                                                @else
+                                                    <span class="text-gray-400">—</span>
+                                                @endif
+                                            </td>
+                                            <td class="px-4 py-2 text-center">
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $tr->is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500' }}">
+                                                    {{ $tr->is_active ? 'Active' : 'Disabled' }}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-2 text-center">
+                                                <div class="flex items-center justify-center space-x-2">
+                                                    <form method="POST" action="{{ route('telemarketing.toggle-transition-rule', $tr) }}" class="inline">
+                                                        @csrf
+                                                        <button type="submit" class="text-xs px-2 py-1 rounded {{ $tr->is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200' }}">
+                                                            {{ $tr->is_active ? 'Disable' : 'Enable' }}
+                                                        </button>
+                                                    </form>
+                                                    <form method="POST" action="{{ route('telemarketing.delete-transition-rule', $tr) }}" class="inline" onsubmit="return confirm('Delete this transition rule?')">
+                                                        @csrf @method('DELETE')
+                                                        <button type="submit" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200">Delete</button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <p class="text-sm text-gray-500 mb-4">No transition rules configured yet. Add rules below to control what happens when shipment statuses change.</p>
+                    @endif
+
+                    {{-- Add New Transition Rule --}}
+                    <div class="border-t pt-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3">Add Transition Rule</h4>
+                        <form method="POST" action="{{ route('telemarketing.store-transition-rule') }}">
+                            @csrf
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <x-input-label for="from_status_id" value="From Status" />
+                                        <select name="from_status_id" id="from_status_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">Any Status</option>
+                                            @foreach($statuses as $status)
+                                                <option value="{{ $status->id }}">{{ $status->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="to_status_id" value="To Status" />
+                                        <select name="to_status_id" id="to_status_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="">Any Status</option>
+                                            @foreach($statuses as $status)
+                                                <option value="{{ $status->id }}">{{ $status->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div>
+                                        <x-input-label for="tr_action" value="Action *" />
+                                        <select name="action" id="tr_action" required class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                            <option value="auto_reassign">Auto Reassign (to correct agent)</option>
+                                            <option value="auto_unassign">Auto Unassign (back to pool)</option>
+                                            <option value="mark_completed">Mark Completed (no more calls)</option>
+                                            <option value="no_action">No Action (keep as is)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="cooldown_days" value="Cooldown (days)" />
+                                        <input type="number" name="cooldown_days" id="cooldown_days" value="0" min="0" max="365" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                        <p class="text-xs text-gray-400 mt-1">0 = no cooldown</p>
+                                    </div>
+                                    <div>
+                                        <x-input-label for="tr_priority" value="Priority" />
+                                        <input type="number" name="priority" id="tr_priority" value="0" min="0" max="100" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center space-x-6">
+                                    <label class="flex items-center">
+                                        <input type="checkbox" name="reset_attempts" value="1" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500">
+                                        <span class="ml-2 text-sm text-gray-700">Reset attempt count to 0</span>
+                                    </label>
+                                </div>
+
+                                <div>
+                                    <x-input-label for="tr_description" value="Description (optional)" />
+                                    <input type="text" name="description" id="tr_description" placeholder="e.g., When For Return becomes Returned, reassign to Returned agent" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                </div>
+
+                                <x-primary-button>Add Transition Rule</x-primary-button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="px-6 py-3 bg-gray-50 border-t border-gray-200">
+                    <p class="text-xs text-gray-500">
+                        <strong>How it works:</strong> After each import, the system checks if any shipment's status changed. If a matching transition rule exists, it applies the configured action (reassign, unassign, complete, or no action). Dispositions marked as "final" are always respected — completed shipments won't be re-called. Dispositions marked as "re-callable on status change" allow the shipment to be called again after reassignment.
+                    </p>
+                </div>
+            </div>
+
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            {{-- TELEMARKETER WORKLOAD SUMMARY --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
             <div class="mt-6 bg-white shadow rounded-lg overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h3 class="text-lg font-semibold text-gray-800">Telemarketer Workload</h3>
@@ -267,6 +463,7 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned Statuses</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Pending</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Completed</th>
@@ -281,17 +478,21 @@
                                         ? $statuses->whereIn('id', $agentStatuses)->pluck('name')->toArray()
                                         : [];
                                 @endphp
-                                <tr class="hover:bg-gray-50">
+                                <tr class="hover:bg-gray-50 {{ !$tm->is_telemarketing_active ? 'opacity-50' : '' }}">
                                     <td class="px-6 py-4">
                                         <div class="flex items-center">
-                                            <div class="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                                                <span class="text-xs font-bold text-indigo-600">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
+                                            <div class="flex-shrink-0 h-8 w-8 {{ $tm->is_telemarketing_active ? 'bg-indigo-100' : 'bg-gray-200' }} rounded-full flex items-center justify-center">
+                                                <span class="text-xs font-bold {{ $tm->is_telemarketing_active ? 'text-indigo-600' : 'text-gray-400' }}">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
                                             </div>
                                             <div class="ml-3">
                                                 <p class="text-sm font-medium text-gray-900">{{ $tm->name }}</p>
-                                                <p class="text-xs text-gray-500">{{ $tm->email }}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-center">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{ $tm->is_telemarketing_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}">
+                                            {{ $tm->is_telemarketing_active ? 'Active' : 'Inactive' }}
+                                        </span>
                                     </td>
                                     <td class="px-6 py-4">
                                         @if(empty($statusNames))
@@ -311,12 +512,21 @@
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ $tm->completed_count }}</span>
                                     </td>
                                     <td class="px-6 py-4 text-center">
-                                        <a href="{{ route('telemarketing.queue', ['telemarketer_id' => $tm->id]) }}" class="text-indigo-600 hover:text-indigo-900 text-sm mr-2">View Queue</a>
-                                        <button type="button" onclick="unassignAll({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
-                                                class="text-red-600 hover:text-red-900 text-sm inline-flex items-center">
-                                            <span class="btn-text">Unassign All</span>
-                                            <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                                        </button>
+                                        <div class="flex items-center justify-center space-x-2">
+                                            <a href="{{ route('telemarketing.queue', ['telemarketer_id' => $tm->id]) }}" class="text-indigo-600 hover:text-indigo-900 text-xs">Queue</a>
+                                            @if(!$tm->is_telemarketing_active && $tm->pending_count > 0)
+                                                <button type="button" onclick="redistributeAgent({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                        class="text-amber-600 hover:text-amber-900 text-xs inline-flex items-center">
+                                                    <span class="btn-text">Redistribute</span>
+                                                    <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                                </button>
+                                            @endif
+                                            <button type="button" onclick="unassignAll({{ $tm->id }}, '{{ addslashes($tm->name) }}', this)"
+                                                    class="text-red-600 hover:text-red-900 text-xs inline-flex items-center">
+                                                <span class="btn-text">Unassign</span>
+                                                <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -330,6 +540,13 @@
     @push('scripts')
     <script>
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+        // ── Status name map for strict validation ──
+        const statusNameMap = {
+            @foreach($statuses as $status)
+                {{ $status->id }}: '{{ $status->name }}',
+            @endforeach
+        };
 
         // ── Helper: show toast notification ──
         function showToast(message, type = 'success') {
@@ -369,10 +586,97 @@
         }
 
         // ═══════════════════════════════════════════════════════
-        //  AGENT STATUS ASSIGNMENTS (NEW)
+        //  AGENT ACTIVE/INACTIVE TOGGLE
         // ═══════════════════════════════════════════════════════
 
-        // Track which agents have unsaved changes
+        async function toggleAgentActive(agentId, agentName, btn) {
+            const currentActive = btn.dataset.active === '1';
+            const newState = !currentActive;
+            const confirmMsg = newState
+                ? `Activate ${agentName} for telemarketing? They will start receiving assignments.`
+                : `Deactivate ${agentName}? They won't receive new assignments. You can redistribute their pending shipments afterward.`;
+
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const res = await fetch('{{ route("telemarketing.toggle-agent-active") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ telemarketer_id: agentId }),
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    // Update toggle UI
+                    btn.dataset.active = data.is_active ? '1' : '0';
+                    const knob = btn.querySelector('span');
+                    const label = document.getElementById(`active-label-${agentId}`);
+                    const row = document.getElementById(`agent-row-${agentId}`);
+
+                    if (data.is_active) {
+                        btn.classList.remove('bg-gray-300');
+                        btn.classList.add('bg-green-500');
+                        knob.classList.remove('translate-x-0');
+                        knob.classList.add('translate-x-5');
+                        if (label) { label.textContent = 'Active'; label.classList.remove('text-gray-400'); label.classList.add('text-green-600'); }
+                        if (row) row.classList.remove('opacity-50');
+                    } else {
+                        btn.classList.remove('bg-green-500');
+                        btn.classList.add('bg-gray-300');
+                        knob.classList.remove('translate-x-5');
+                        knob.classList.add('translate-x-0');
+                        if (label) { label.textContent = 'Inactive'; label.classList.remove('text-green-600'); label.classList.add('text-gray-400'); }
+                        if (row) row.classList.add('opacity-50');
+                    }
+
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showToast(data.message || 'Failed to toggle.', 'error');
+                }
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  REDISTRIBUTE AGENT
+        // ═══════════════════════════════════════════════════════
+
+        async function redistributeAgent(agentId, agentName, btn) {
+            if (!confirm(`Redistribute all pending shipments from ${agentName} to other active agents?`)) return;
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Redistributing...';
+
+            try {
+                const res = await fetch('{{ route("telemarketing.redistribute-agent") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ telemarketer_id: agentId }),
+                });
+                const data = await res.json();
+                showToast(data.message, data.success ? 'success' : 'info');
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Redistribute';
+            setTimeout(() => location.reload(), 2000);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  AGENT STATUS ASSIGNMENTS
+        // ═══════════════════════════════════════════════════════
+
         const dirtyAgents = new Set();
 
         function markAgentDirty(agentId) {
@@ -390,7 +694,6 @@
             setLoading(btn, true);
             btn.querySelector('.btn-text').textContent = 'Saving...';
 
-            // Collect checked status IDs for this agent
             const checkboxes = document.querySelectorAll(`.agent-status-cb[data-agent-id="${agentId}"]`);
             const statusIds = [];
             checkboxes.forEach(cb => {
@@ -405,29 +708,20 @@
                         'X-CSRF-TOKEN': csrfToken,
                         'Accept': 'application/json',
                     },
-                    body: JSON.stringify({
-                        telemarketer_id: agentId,
-                        status_ids: statusIds,
-                    }),
+                    body: JSON.stringify({ telemarketer_id: agentId, status_ids: statusIds }),
                 });
                 const data = await res.json();
 
                 if (data.success) {
                     showToast(data.message, 'success');
                     dirtyAgents.delete(agentId);
-
-                    // Update the saved label
                     const savedLabel = document.getElementById(`saved-agent-${agentId}`);
                     if (savedLabel) {
-                        if (statusIds.length > 0) {
-                            savedLabel.textContent = `✓ ${statusIds.length} status${statusIds.length > 1 ? 'es' : ''}`;
-                        } else {
-                            savedLabel.textContent = 'All';
-                        }
+                        savedLabel.textContent = statusIds.length > 0
+                            ? `✓ ${statusIds.length} status${statusIds.length > 1 ? 'es' : ''}`
+                            : 'All';
                         savedLabel.classList.remove('hidden');
                     }
-
-                    // Hide save button
                     btn.classList.add('hidden');
                     btn.classList.remove('inline-flex');
                 } else {
@@ -442,10 +736,51 @@
         }
 
         // ═══════════════════════════════════════════════════════
-        //  EXISTING AJAX FUNCTIONS
+        //  STRICT MANUAL ASSIGN VALIDATION (Client-side)
         // ═══════════════════════════════════════════════════════
 
-        // ── AJAX: Run all assignment rules ──
+        function checkStrictAssign() {
+            const tmSelect = document.getElementById('telemarketer_id');
+            const statusSelect = document.getElementById('status_id');
+            const warning = document.getElementById('strict-assign-warning');
+            const warningMsg = document.getElementById('strict-assign-msg');
+
+            if (!tmSelect.value) { warning.classList.add('hidden'); return; }
+
+            const selectedOption = tmSelect.options[tmSelect.selectedIndex];
+            const agentStatuses = JSON.parse(selectedOption.dataset.statuses || '[]');
+            const isActive = selectedOption.dataset.active === '1';
+
+            // Check inactive
+            if (!isActive) {
+                warning.classList.remove('hidden');
+                warningMsg.textContent = 'This agent is INACTIVE. They cannot receive new assignments.';
+                return;
+            }
+
+            // Check status mismatch (only if agent has specific statuses assigned AND a status filter is selected)
+            if (agentStatuses.length > 0 && statusSelect.value) {
+                const selectedStatusId = parseInt(statusSelect.value);
+                if (!agentStatuses.includes(selectedStatusId)) {
+                    const statusName = statusNameMap[selectedStatusId] || 'Unknown';
+                    const allowedNames = agentStatuses.map(id => statusNameMap[id] || 'Unknown').join(', ');
+                    warning.classList.remove('hidden');
+                    warningMsg.textContent = `This agent only handles [${allowedNames}]. You selected "${statusName}" which is not in their assigned statuses. This assignment will be blocked.`;
+                    return;
+                }
+            }
+
+            warning.classList.add('hidden');
+        }
+
+        // Attach change listeners for strict validation
+        document.getElementById('telemarketer_id').addEventListener('change', checkStrictAssign);
+        document.getElementById('status_id').addEventListener('change', checkStrictAssign);
+
+        // ═══════════════════════════════════════════════════════
+        //  AJAX FUNCTIONS
+        // ═══════════════════════════════════════════════════════
+
         async function runAllRules(btn) {
             if (!confirm('Run auto-assignment for all active rules?')) return;
             setLoading(btn, true);
@@ -454,11 +789,7 @@
             try {
                 const res = await fetch('{{ route("telemarketing.run-auto-assign") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
                     body: JSON.stringify({}),
                 });
                 const data = await res.json();
@@ -472,7 +803,6 @@
             setTimeout(() => location.reload(), 3000);
         }
 
-        // ── AJAX: Run a single rule ──
         async function runSingleRule(ruleId, btn) {
             setLoading(btn, true);
             btn.querySelector('.btn-text').textContent = 'Running...';
@@ -480,11 +810,7 @@
             try {
                 const res = await fetch('{{ route("telemarketing.run-auto-assign") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
                     body: JSON.stringify({ rule_id: ruleId }),
                 });
                 const data = await res.json();
@@ -498,7 +824,6 @@
             setTimeout(() => location.reload(), 3000);
         }
 
-        // ── AJAX: Manual assign ──
         async function handleManualAssign(e) {
             e.preventDefault();
             const btn = document.getElementById('btn-manual-assign');
@@ -520,15 +845,11 @@
 
                 const res = await fetch('{{ route("telemarketing.manual-assign") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
                     body: JSON.stringify(body),
                 });
                 const data = await res.json();
-                showToast(data.message, data.success ? 'success' : 'info');
+                showToast(data.message, data.success ? 'success' : (res.status === 422 ? 'error' : 'info'));
             } catch (e) {
                 showToast('An error occurred. Please try again.', 'error');
             }
@@ -539,7 +860,6 @@
             return false;
         }
 
-        // ── AJAX: Unassign all ──
         async function unassignAll(telemarketerId, name, btn) {
             if (!confirm(`Unassign all pending shipments from ${name}?`)) return;
             setLoading(btn, true);
@@ -548,11 +868,7 @@
             try {
                 const res = await fetch('{{ route("telemarketing.unassign-all") }}', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': csrfToken,
-                        'Accept': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
                     body: JSON.stringify({ telemarketer_id: telemarketerId }),
                 });
                 const data = await res.json();
@@ -562,11 +878,10 @@
             }
 
             setLoading(btn, false);
-            btn.querySelector('.btn-text').textContent = 'Unassign All';
+            btn.querySelector('.btn-text').textContent = 'Unassign';
             setTimeout(() => location.reload(), 3000);
         }
 
-        // ── Toggle rule type fields ──
         function toggleRuleFields() {
             const ruleType = document.getElementById('rule_type').value;
             document.getElementById('status-field').classList.toggle('hidden', ruleType === 'delivered_age');

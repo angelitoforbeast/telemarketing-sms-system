@@ -79,6 +79,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/telemarketing/unassign-all', [TelemarketingController::class, 'unassignAll'])->name('telemarketing.unassign-all');
             Route::post('/telemarketing/run-auto-assign', [TelemarketingController::class, 'runAutoAssign'])->name('telemarketing.run-auto-assign');
             Route::post('/telemarketing/sync-agent-statuses', [TelemarketingController::class, 'syncAgentStatuses'])->name('telemarketing.sync-agent-statuses');
+            Route::post('/telemarketing/toggle-agent-active', [TelemarketingController::class, 'toggleAgentActive'])->name('telemarketing.toggle-agent-active');
+            Route::post('/telemarketing/redistribute-agent', [TelemarketingController::class, 'redistributeAgent'])->name('telemarketing.redistribute-agent');
             Route::post('/telemarketing/rules', [TelemarketingController::class, 'storeRule'])->name('telemarketing.store-rule');
             Route::post('/telemarketing/rules/{rule}/toggle', [TelemarketingController::class, 'toggleRule'])->name('telemarketing.toggle-rule');
             Route::delete('/telemarketing/rules/{rule}', [TelemarketingController::class, 'deleteRule'])->name('telemarketing.delete-rule');
@@ -86,6 +88,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/telemarketing/dispositions', [TelemarketingController::class, 'storeDisposition'])->name('telemarketing.store-disposition');
             Route::delete('/telemarketing/dispositions/{disposition}', [TelemarketingController::class, 'deleteDisposition'])->name('telemarketing.delete-disposition');
             Route::get('/telemarketing/call-logs', [TelemarketingController::class, 'callLogs'])->name('telemarketing.call-logs');
+            Route::post('/telemarketing/transition-rules', [TelemarketingController::class, 'storeTransitionRule'])->name('telemarketing.store-transition-rule');
+            Route::post('/telemarketing/transition-rules/{transitionRule}/toggle', [TelemarketingController::class, 'toggleTransitionRule'])->name('telemarketing.toggle-transition-rule');
+            Route::delete('/telemarketing/transition-rules/{transitionRule}', [TelemarketingController::class, 'deleteTransitionRule'])->name('telemarketing.delete-transition-rule');
         });
 
         // SMS Campaigns
