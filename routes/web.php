@@ -78,6 +78,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/telemarketing/manual-assign', [TelemarketingController::class, 'manualAssign'])->name('telemarketing.manual-assign');
             Route::post('/telemarketing/unassign-all', [TelemarketingController::class, 'unassignAll'])->name('telemarketing.unassign-all');
             Route::post('/telemarketing/run-auto-assign', [TelemarketingController::class, 'runAutoAssign'])->name('telemarketing.run-auto-assign');
+            Route::post('/telemarketing/sync-agent-statuses', [TelemarketingController::class, 'syncAgentStatuses'])->name('telemarketing.sync-agent-statuses');
             Route::post('/telemarketing/rules', [TelemarketingController::class, 'storeRule'])->name('telemarketing.store-rule');
             Route::post('/telemarketing/rules/{rule}/toggle', [TelemarketingController::class, 'toggleRule'])->name('telemarketing.toggle-rule');
             Route::delete('/telemarketing/rules/{rule}', [TelemarketingController::class, 'deleteRule'])->name('telemarketing.delete-rule');

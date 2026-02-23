@@ -19,6 +19,19 @@
                 <div class="mb-4 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg">{{ session('info') }}</div>
             @endif
 
+            {{-- Assigned Statuses Badge --}}
+            @if(!empty($stats['assigned_statuses']))
+                <div class="mb-4 bg-indigo-50 border border-indigo-200 px-4 py-3 rounded-lg flex items-center">
+                    <svg class="w-5 h-5 text-indigo-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+                    <span class="text-sm text-indigo-700">
+                        <strong>Your assigned statuses:</strong>
+                        @foreach($stats['assigned_statuses'] as $statusName)
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-200 text-indigo-800 ml-1">{{ $statusName }}</span>
+                        @endforeach
+                    </span>
+                </div>
+            @endif
+
             {{-- Stats Cards --}}
             <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <x-stat-card title="Pending Queue" :value="$stats['total_assigned']" color="indigo" />

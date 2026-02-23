@@ -3,6 +3,7 @@
 namespace App\Services\Telemarketing;
 
 use App\Models\Shipment;
+use App\Models\TelemarketerStatusAssignment;
 use App\Models\TelemarketingAssignmentRule;
 use App\Models\TelemarketingDisposition;
 use App\Models\TelemarketingLog;
@@ -18,7 +19,7 @@ class TelemarketingService
 
     /**
      * Get the telemarketer's assigned shipment queue with smart ordering.
-     * Callbacks due first, then never-contacted, then by last_contacted_at ASC.
+     * Respects per-agent status assignments: only shows statuses assigned to the agent.
      */
     public function getQueue(int $userId, int $companyId, array $filters = [], int $perPage = 25): LengthAwarePaginator
     {
@@ -26,6 +27,9 @@ class TelemarketingService
             ->forCompany($companyId)
             ->assignedTo($userId)
             ->telemarketable();
+
+        // Apply per-agent status filter (if configured)
+        $this->applyAgentStatusFilter($query, $userId);
 
         // Filter by status
         if (!empty($filters['status_id'])) {
@@ -69,6 +73,7 @@ class TelemarketingService
 
     /**
      * Get the next shipment to call for a telemarketer (auto-advance).
+     * Respects per-agent status assignments.
      */
     public function getNextCall(int $userId, int $companyId, ?int $excludeShipmentId = null): ?Shipment
     {
@@ -76,6 +81,9 @@ class TelemarketingService
             ->forCompany($companyId)
             ->assignedTo($userId)
             ->telemarketable();
+
+        // Apply per-agent status filter
+        $this->applyAgentStatusFilter($query, $userId);
 
         if ($excludeShipmentId) {
             $query->where('id', '!=', $excludeShipmentId);
@@ -89,6 +97,71 @@ class TelemarketingService
             ->orderByRaw("last_contacted_at IS NULL DESC")
             ->orderBy('last_contacted_at', 'asc')
             ->first();
+    }
+
+    /**
+     * Apply the per-agent status filter to a query.
+     * If the agent has assigned statuses, only show shipments with those statuses.
+     * If no statuses assigned, show all (backwards compatible).
+     */
+    protected function applyAgentStatusFilter($query, int $userId): void
+    {
+        $allowedStatusIds = $this->getAgentAllowedStatusIds($userId);
+
+        if ($allowedStatusIds !== null) {
+            $query->whereIn('normalized_status_id', $allowedStatusIds);
+        }
+    }
+
+    /**
+     * Get the allowed status IDs for a telemarketer.
+     * Returns null if no restrictions (all statuses allowed).
+     */
+    public function getAgentAllowedStatusIds(int $userId): ?array
+    {
+        $ids = TelemarketerStatusAssignment::where('user_id', $userId)
+            ->pluck('shipment_status_id')
+            ->toArray();
+
+        return empty($ids) ? null : $ids;
+    }
+
+    /**
+     * Sync the assigned statuses for a telemarketer.
+     */
+    public function syncAgentStatuses(int $userId, int $companyId, array $statusIds): void
+    {
+        // Remove existing assignments
+        TelemarketerStatusAssignment::where('user_id', $userId)
+            ->where('company_id', $companyId)
+            ->delete();
+
+        // Insert new assignments
+        foreach ($statusIds as $statusId) {
+            TelemarketerStatusAssignment::create([
+                'user_id' => $userId,
+                'shipment_status_id' => $statusId,
+                'company_id' => $companyId,
+            ]);
+        }
+    }
+
+    /**
+     * Get the assigned statuses for all telemarketers in a company.
+     * Returns array keyed by user_id => [status_id, status_id, ...]
+     */
+    public function getAllAgentStatusAssignments(int $companyId): array
+    {
+        $assignments = TelemarketerStatusAssignment::where('company_id', $companyId)
+            ->get()
+            ->groupBy('user_id');
+
+        $result = [];
+        foreach ($assignments as $userId => $items) {
+            $result[$userId] = $items->pluck('shipment_status_id')->toArray();
+        }
+
+        return $result;
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -168,6 +241,8 @@ class TelemarketingService
 
     /**
      * Auto-assign shipments to telemarketers based on configured rules.
+     * Now respects per-agent status assignments: only assigns shipments
+     * with matching statuses to agents who handle those statuses.
      */
     public function autoAssignByRules(int $companyId, ?int $ruleId = null): array
     {
@@ -193,6 +268,7 @@ class TelemarketingService
 
     /**
      * Execute a single assignment rule.
+     * Respects per-agent status assignments.
      */
     protected function executeAssignmentRule(TelemarketingAssignmentRule $rule, int $companyId): int
     {
@@ -214,7 +290,6 @@ class TelemarketingService
                 break;
 
             case 'delivered_age':
-                // Delivered shipments older than X days (for reordering campaigns)
                 $query->whereHas('status', fn ($q) => $q->where('code', 'delivered'))
                       ->where('signing_time', '<=', now()->subDays($rule->days_threshold ?? 7));
                 break;
@@ -229,30 +304,72 @@ class TelemarketingService
 
         if ($shipments->isEmpty()) return 0;
 
+        // Get per-agent status assignments
+        $agentStatusMap = $this->getAllAgentStatusAssignments($companyId);
+
         // Assign based on method
         if ($rule->assignment_method === 'workload_based') {
-            return $this->assignWorkloadBased($shipments, $telemarketers, $companyId);
+            return $this->assignWorkloadBased($shipments, $telemarketers, $companyId, $agentStatusMap);
         }
 
-        return $this->assignRoundRobin($shipments, $telemarketers);
+        return $this->assignRoundRobin($shipments, $telemarketers, $agentStatusMap);
     }
 
     /**
-     * Round-robin assignment.
+     * Get eligible telemarketers for a shipment based on its status.
+     * If an agent has status assignments, only include them if the shipment's status matches.
+     * If an agent has NO status assignments, they can handle any status.
      */
-    protected function assignRoundRobin($shipments, $telemarketers): int
+    protected function getEligibleTelemarketers($telemarketers, int $shipmentStatusId, array $agentStatusMap): array
     {
-        $ids = $telemarketers->pluck('id')->toArray();
+        $eligible = [];
+
+        foreach ($telemarketers as $tm) {
+            if (isset($agentStatusMap[$tm->id])) {
+                // Agent has specific status assignments — check if this status is in their list
+                if (in_array($shipmentStatusId, $agentStatusMap[$tm->id])) {
+                    $eligible[] = $tm;
+                }
+            } else {
+                // Agent has no status restrictions — can handle any status
+                $eligible[] = $tm;
+            }
+        }
+
+        return $eligible;
+    }
+
+    /**
+     * Round-robin assignment. Respects per-agent status assignments.
+     */
+    protected function assignRoundRobin($shipments, $telemarketers, array $agentStatusMap): int
+    {
         $count = 0;
-        $index = 0;
+        // Track round-robin index per eligible group (keyed by sorted eligible IDs)
+        $rrIndexes = [];
 
         foreach ($shipments as $shipment) {
+            $eligible = $this->getEligibleTelemarketers($telemarketers, $shipment->normalized_status_id, $agentStatusMap);
+
+            if (empty($eligible)) continue;
+
+            // Create a key for this eligible group
+            $eligibleIds = array_map(fn($t) => $t->id, $eligible);
+            sort($eligibleIds);
+            $groupKey = implode(',', $eligibleIds);
+
+            if (!isset($rrIndexes[$groupKey])) {
+                $rrIndexes[$groupKey] = 0;
+            }
+
+            $assignTo = $eligible[$rrIndexes[$groupKey] % count($eligible)];
+            $rrIndexes[$groupKey]++;
+
             $shipment->update([
-                'assigned_to_user_id' => $ids[$index % count($ids)],
+                'assigned_to_user_id' => $assignTo->id,
                 'assigned_at' => now(),
                 'telemarketing_status' => 'in_progress',
             ]);
-            $index++;
             $count++;
         }
 
@@ -260,9 +377,9 @@ class TelemarketingService
     }
 
     /**
-     * Workload-based assignment: assigns to telemarketer with fewest pending shipments.
+     * Workload-based assignment. Respects per-agent status assignments.
      */
-    protected function assignWorkloadBased($shipments, $telemarketers, int $companyId): int
+    protected function assignWorkloadBased($shipments, $telemarketers, int $companyId, array $agentStatusMap): int
     {
         // Get current workload per telemarketer
         $workloads = Shipment::forCompany($companyId)
@@ -276,11 +393,15 @@ class TelemarketingService
         $count = 0;
 
         foreach ($shipments as $shipment) {
-            // Find telemarketer with lowest workload
+            $eligible = $this->getEligibleTelemarketers($telemarketers, $shipment->normalized_status_id, $agentStatusMap);
+
+            if (empty($eligible)) continue;
+
+            // Find eligible telemarketer with lowest workload
             $minLoad = PHP_INT_MAX;
             $assignTo = null;
 
-            foreach ($telemarketers as $tm) {
+            foreach ($eligible as $tm) {
                 $load = $workloads[$tm->id] ?? 0;
                 if ($load < $minLoad) {
                     $minLoad = $load;
@@ -294,7 +415,6 @@ class TelemarketingService
                     'assigned_at' => now(),
                     'telemarketing_status' => 'in_progress',
                 ]);
-                // Update in-memory workload
                 $workloads[$assignTo] = ($workloads[$assignTo] ?? 0) + 1;
                 $count++;
             }
@@ -352,10 +472,14 @@ class TelemarketingService
     {
         $today = now()->startOfDay();
 
-        $totalAssigned = Shipment::forCompany($companyId)
+        $baseQuery = Shipment::forCompany($companyId)
             ->assignedTo($userId)
-            ->telemarketable()
-            ->count();
+            ->telemarketable();
+
+        // Apply per-agent status filter
+        $allowedStatusIds = $this->getAgentAllowedStatusIds($userId);
+
+        $totalAssigned = (clone $baseQuery)->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))->count();
 
         $callsToday = TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $today)
@@ -364,6 +488,7 @@ class TelemarketingService
         $callbacksDue = Shipment::forCompany($companyId)
             ->assignedTo($userId)
             ->callbackDue()
+            ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
             ->count();
 
         $completedToday = TelemarketingLog::where('user_id', $userId)
@@ -375,6 +500,7 @@ class TelemarketingService
             ->assignedTo($userId)
             ->telemarketable()
             ->neverContacted()
+            ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
             ->count();
 
         // Disposition breakdown for today
@@ -390,6 +516,11 @@ class TelemarketingService
             ->orderBy('count', 'desc')
             ->get();
 
+        // Get assigned statuses for display
+        $assignedStatuses = $allowedStatusIds
+            ? \App\Models\ShipmentStatus::whereIn('id', $allowedStatusIds)->pluck('name')->toArray()
+            : ['All Statuses'];
+
         return [
             'total_assigned' => $totalAssigned,
             'calls_today' => $callsToday,
@@ -397,6 +528,7 @@ class TelemarketingService
             'completed_today' => $completedToday,
             'never_contacted' => $neverContacted,
             'disposition_breakdown' => $dispositionBreakdown,
+            'assigned_statuses' => $assignedStatuses,
         ];
     }
 
@@ -443,6 +575,9 @@ class TelemarketingService
             ])
             ->get();
 
+        // Get per-agent status assignments for display
+        $agentStatusMap = $this->getAllAgentStatusAssignments($companyId);
+
         return [
             'total_pending' => $totalPending,
             'total_in_progress' => $totalInProgress,
@@ -450,6 +585,7 @@ class TelemarketingService
             'total_unassigned' => $totalUnassigned,
             'calls_today' => $callsToday,
             'telemarketers' => $telemarketers,
+            'agent_status_map' => $agentStatusMap,
         ];
     }
 

@@ -62,6 +62,18 @@ class DatabaseSeeder extends Seeder
         );
         $ceo->assignRole('CEO');
 
+        // ── Demo Company Manager ──
+        $manager = \App\Models\User::firstOrCreate(
+            ['email' => 'manager@demo.com'],
+            [
+                'name' => 'Demo Manager',
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'company_id' => $company->id,
+                'is_active' => true,
+            ]
+        );
+        $manager->assignRole('Company Manager');
+
         // ── 5 Demo Telemarketer Accounts ──
         $telemarketers = [
             ['email' => 'agent1@demo.com', 'name' => 'Maria Santos'],
@@ -71,6 +83,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'agent5@demo.com', 'name' => 'Liza Mendoza'],
         ];
 
+        $createdTelemarketers = [];
         foreach ($telemarketers as $tmData) {
             $tm = \App\Models\User::firstOrCreate(
                 ['email' => $tmData['email']],
@@ -82,6 +95,7 @@ class DatabaseSeeder extends Seeder
                 ]
             );
             $tm->assignRole('Telemarketer');
+            $createdTelemarketers[] = $tm;
         }
 
         // ── Default Assignment Rules ──
@@ -127,5 +141,42 @@ class DatabaseSeeder extends Seeder
                 'max_attempts' => 3,
             ]
         );
+
+        // ── Demo Agent Status Assignments ──
+        // Assign specific statuses to each telemarketer for demo purposes
+        $deliveredStatus = \App\Models\ShipmentStatus::where('code', 'delivered')->first();
+
+        if (count($createdTelemarketers) >= 5 && $returnStatus && $forReturnStatus && $deliveredStatus) {
+            // Agent 1 & 2: Returned shipments only
+            \App\Models\TelemarketerStatusAssignment::firstOrCreate([
+                'user_id' => $createdTelemarketers[0]->id,
+                'company_id' => $company->id,
+                'shipment_status_id' => $returnStatus->id,
+            ]);
+            \App\Models\TelemarketerStatusAssignment::firstOrCreate([
+                'user_id' => $createdTelemarketers[1]->id,
+                'company_id' => $company->id,
+                'shipment_status_id' => $returnStatus->id,
+            ]);
+
+            // Agent 3 & 4: For Return shipments only
+            \App\Models\TelemarketerStatusAssignment::firstOrCreate([
+                'user_id' => $createdTelemarketers[2]->id,
+                'company_id' => $company->id,
+                'shipment_status_id' => $forReturnStatus->id,
+            ]);
+            \App\Models\TelemarketerStatusAssignment::firstOrCreate([
+                'user_id' => $createdTelemarketers[3]->id,
+                'company_id' => $company->id,
+                'shipment_status_id' => $forReturnStatus->id,
+            ]);
+
+            // Agent 5: Delivered (Reorder) only
+            \App\Models\TelemarketerStatusAssignment::firstOrCreate([
+                'user_id' => $createdTelemarketers[4]->id,
+                'company_id' => $company->id,
+                'shipment_status_id' => $deliveredStatus->id,
+            ]);
+        }
     }
 }

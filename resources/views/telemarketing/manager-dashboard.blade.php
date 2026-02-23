@@ -51,6 +51,7 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned Statuses</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Pending Queue</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Calls Today</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -69,6 +70,23 @@
                                                 <p class="text-xs text-gray-500">{{ $tm->email }}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        @php
+                                            $agentStatuses = $stats['agent_status_map'][$tm->id] ?? [];
+                                            $statusNames = $agentStatuses
+                                                ? \App\Models\ShipmentStatus::whereIn('id', $agentStatuses)->pluck('name')->toArray()
+                                                : [];
+                                        @endphp
+                                        @if(empty($statusNames))
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">All</span>
+                                        @else
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach($statusNames as $sn)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">{{ $sn }}</span>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $tm->pending_count > 0 ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-500' }}">
@@ -90,7 +108,7 @@
                                     </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500">No active telemarketers found. Create telemarketer accounts in User Management.</td></tr>
+                                <tr><td colspan="5" class="px-6 py-8 text-center text-sm text-gray-500">No active telemarketers found. Create telemarketer accounts in User Management.</td></tr>
                             @endforelse
                         </tbody>
                     </table>

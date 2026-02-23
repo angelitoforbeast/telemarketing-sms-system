@@ -22,6 +22,76 @@
                 @endif
             </div>
 
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            {{-- AGENT STATUS ASSIGNMENTS (NEW) --}}
+            {{-- ═══════════════════════════════════════════════════════ --}}
+            <div class="mb-6 bg-white shadow rounded-lg overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-800">Agent Status Assignments</h3>
+                    <p class="text-sm text-gray-500 mt-1">Set which shipment statuses each telemarketer handles. Agents will only see shipments matching their assigned statuses. Leave blank = all statuses.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
+                                @foreach($statuses as $status)
+                                    <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{{ $status->name }}</th>
+                                @endforeach
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            @foreach($telemarketers as $tm)
+                                <tr class="hover:bg-gray-50" id="agent-row-{{ $tm->id }}">
+                                    <td class="px-6 py-3">
+                                        <div class="flex items-center">
+                                            <div class="flex-shrink-0 h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                                                <span class="text-xs font-bold text-indigo-600">{{ strtoupper(substr($tm->name, 0, 2)) }}</span>
+                                            </div>
+                                            <div class="ml-3">
+                                                <p class="text-sm font-medium text-gray-900">{{ $tm->name }}</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    @foreach($statuses as $status)
+                                        <td class="px-3 py-3 text-center">
+                                            <input type="checkbox"
+                                                   class="agent-status-cb rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
+                                                   data-agent-id="{{ $tm->id }}"
+                                                   data-status-id="{{ $status->id }}"
+                                                   {{ in_array($status->id, $agentStatusMap[$tm->id] ?? []) ? 'checked' : '' }}
+                                                   onchange="markAgentDirty({{ $tm->id }})">
+                                        </td>
+                                    @endforeach
+                                    <td class="px-4 py-3 text-center">
+                                        <button type="button"
+                                                id="save-agent-{{ $tm->id }}"
+                                                onclick="saveAgentStatuses({{ $tm->id }}, this)"
+                                                class="hidden inline-flex items-center px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 transition">
+                                            <span class="btn-text">Save</span>
+                                            <svg class="btn-spinner hidden animate-spin ml-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                        </button>
+                                        <span id="saved-agent-{{ $tm->id }}" class="{{ !empty($agentStatusMap[$tm->id] ?? []) ? '' : 'hidden' }} text-xs text-green-600 font-medium">
+                                            @if(!empty($agentStatusMap[$tm->id] ?? []))
+                                                ✓ {{ count($agentStatusMap[$tm->id]) }} status{{ count($agentStatusMap[$tm->id]) > 1 ? 'es' : '' }}
+                                            @else
+                                                All
+                                            @endif
+                                        </span>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-6 py-3 bg-gray-50 border-t border-gray-200">
+                    <p class="text-xs text-gray-500">
+                        <strong>Tip:</strong> If no checkboxes are selected for an agent, they can handle <strong>all</strong> statuses. Check specific statuses to restrict what an agent sees in their queue. Auto-assignment rules will also respect these settings.
+                    </p>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {{-- Manual Assignment Panel --}}
@@ -197,6 +267,7 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned Statuses</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Pending</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Completed</th>
                                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -204,6 +275,12 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($telemarketers as $tm)
+                                @php
+                                    $agentStatuses = $agentStatusMap[$tm->id] ?? [];
+                                    $statusNames = $agentStatuses
+                                        ? $statuses->whereIn('id', $agentStatuses)->pluck('name')->toArray()
+                                        : [];
+                                @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-6 py-4">
                                         <div class="flex items-center">
@@ -215,6 +292,17 @@
                                                 <p class="text-xs text-gray-500">{{ $tm->email }}</p>
                                             </div>
                                         </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        @if(empty($statusNames))
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">All Statuses</span>
+                                        @else
+                                            <div class="flex flex-wrap gap-1">
+                                                @foreach($statusNames as $sn)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700">{{ $sn }}</span>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </td>
                                     <td class="px-6 py-4 text-center">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{{ $tm->pending_count }}</span>
@@ -255,8 +343,6 @@
             div.className = `mb-4 border px-4 py-3 rounded-lg ${colors[type] || colors.info} transition-opacity duration-500`;
             div.innerHTML = message;
             container.prepend(div);
-
-            // Auto-remove after 6 seconds
             setTimeout(() => {
                 div.style.opacity = '0';
                 setTimeout(() => div.remove(), 500);
@@ -282,6 +368,83 @@
             }
         }
 
+        // ═══════════════════════════════════════════════════════
+        //  AGENT STATUS ASSIGNMENTS (NEW)
+        // ═══════════════════════════════════════════════════════
+
+        // Track which agents have unsaved changes
+        const dirtyAgents = new Set();
+
+        function markAgentDirty(agentId) {
+            dirtyAgents.add(agentId);
+            const saveBtn = document.getElementById(`save-agent-${agentId}`);
+            const savedLabel = document.getElementById(`saved-agent-${agentId}`);
+            if (saveBtn) {
+                saveBtn.classList.remove('hidden');
+                saveBtn.classList.add('inline-flex');
+            }
+            if (savedLabel) savedLabel.classList.add('hidden');
+        }
+
+        async function saveAgentStatuses(agentId, btn) {
+            setLoading(btn, true);
+            btn.querySelector('.btn-text').textContent = 'Saving...';
+
+            // Collect checked status IDs for this agent
+            const checkboxes = document.querySelectorAll(`.agent-status-cb[data-agent-id="${agentId}"]`);
+            const statusIds = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) statusIds.push(parseInt(cb.dataset.statusId));
+            });
+
+            try {
+                const res = await fetch('{{ route("telemarketing.sync-agent-statuses") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        telemarketer_id: agentId,
+                        status_ids: statusIds,
+                    }),
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    dirtyAgents.delete(agentId);
+
+                    // Update the saved label
+                    const savedLabel = document.getElementById(`saved-agent-${agentId}`);
+                    if (savedLabel) {
+                        if (statusIds.length > 0) {
+                            savedLabel.textContent = `✓ ${statusIds.length} status${statusIds.length > 1 ? 'es' : ''}`;
+                        } else {
+                            savedLabel.textContent = 'All';
+                        }
+                        savedLabel.classList.remove('hidden');
+                    }
+
+                    // Hide save button
+                    btn.classList.add('hidden');
+                    btn.classList.remove('inline-flex');
+                } else {
+                    showToast(data.message || 'Failed to save.', 'error');
+                }
+            } catch (e) {
+                showToast('An error occurred. Please try again.', 'error');
+            }
+
+            setLoading(btn, false);
+            btn.querySelector('.btn-text').textContent = 'Save';
+        }
+
+        // ═══════════════════════════════════════════════════════
+        //  EXISTING AJAX FUNCTIONS
+        // ═══════════════════════════════════════════════════════
+
         // ── AJAX: Run all assignment rules ──
         async function runAllRules(btn) {
             if (!confirm('Run auto-assignment for all active rules?')) return;
@@ -306,8 +469,6 @@
 
             setLoading(btn, false);
             btn.querySelector('.btn-text').textContent = 'Run Auto-Assign';
-
-            // Auto-refresh page after 3 seconds to show updated counts
             setTimeout(() => location.reload(), 3000);
         }
 
@@ -334,7 +495,6 @@
 
             setLoading(btn, false);
             btn.querySelector('.btn-text').textContent = 'Run';
-
             setTimeout(() => location.reload(), 3000);
         }
 
@@ -375,7 +535,6 @@
 
             setLoading(btn, false);
             btn.querySelector('.btn-text').textContent = 'Assign Shipments';
-
             setTimeout(() => location.reload(), 3000);
             return false;
         }
@@ -404,7 +563,6 @@
 
             setLoading(btn, false);
             btn.querySelector('.btn-text').textContent = 'Unassign All';
-
             setTimeout(() => location.reload(), 3000);
         }
 

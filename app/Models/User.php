@@ -54,6 +54,22 @@ class User extends Authenticatable
         return $this->hasMany(ImportJob::class);
     }
 
+    public function assignedStatuses()
+    {
+        return $this->belongsToMany(ShipmentStatus::class, 'telemarketer_status_assignments', 'user_id', 'shipment_status_id')
+                     ->withTimestamps();
+    }
+
+    /**
+     * Get the status IDs this telemarketer is allowed to handle.
+     * Returns null if no restrictions (all statuses allowed).
+     */
+    public function getAllowedStatusIds(): ?array
+    {
+        $ids = $this->assignedStatuses()->pluck('shipment_statuses.id')->toArray();
+        return empty($ids) ? null : $ids;
+    }
+
     // ── Scopes ──
 
     public function scopeActive($query)

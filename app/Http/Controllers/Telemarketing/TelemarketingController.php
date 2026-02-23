@@ -196,8 +196,40 @@ class TelemarketingController extends Controller
 
         $statuses = ShipmentStatus::orderBy('sort_order')->get();
         $rules = TelemarketingAssignmentRule::forCompany($companyId)->orderBy('priority', 'desc')->get();
+        $agentStatusMap = $this->telemarketingService->getAllAgentStatusAssignments($companyId);
 
-        return view('telemarketing.assignments', compact('telemarketers', 'unassignedCount', 'statuses', 'rules'));
+        return view('telemarketing.assignments', compact('telemarketers', 'unassignedCount', 'statuses', 'rules', 'agentStatusMap'));
+    }
+
+    /**
+     * Update the assigned statuses for a telemarketer.
+     */
+    public function syncAgentStatuses(Request $request)
+    {
+        $request->validate([
+            'telemarketer_id' => 'required|integer|exists:users,id',
+            'status_ids' => 'nullable|array',
+            'status_ids.*' => 'integer|exists:shipment_statuses,id',
+        ]);
+
+        $companyId = $request->user()->company_id;
+        $statusIds = $request->input('status_ids', []);
+
+        $this->telemarketingService->syncAgentStatuses(
+            (int) $request->telemarketer_id,
+            $companyId,
+            $statusIds
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Status assignments updated successfully.',
+                'status_ids' => $statusIds,
+            ]);
+        }
+
+        return back()->with('success', 'Status assignments updated.');
     }
 
     /**
