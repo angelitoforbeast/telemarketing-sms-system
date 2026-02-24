@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TeleSMS</string>
+    <string name="server_url_hint">e.g., https://yourdomain.com</string>
+    <string name="save_button">Save &amp; Connect</string>
+    <string name="channel_name">Call Recording Monitor</string>
+    <string name="channel_description">Monitors and uploads call recordings</string>
+</resources>
