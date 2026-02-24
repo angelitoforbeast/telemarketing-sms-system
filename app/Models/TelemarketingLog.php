@@ -19,6 +19,8 @@ class TelemarketingLog extends Model
         'phone_called',
         'call_duration_seconds',
         'call_started_at',
+        'recording_path',
+        'recording_url',
     ];
 
     protected $casts = [
@@ -39,5 +41,29 @@ class TelemarketingLog extends Model
     public function disposition()
     {
         return $this->belongsTo(TelemarketingDisposition::class, 'disposition_id');
+    }
+
+    /**
+     * Check if this log has a recording.
+     */
+    public function hasRecording(): bool
+    {
+        return !empty($this->recording_path) || !empty($this->recording_url);
+    }
+
+    /**
+     * Get the URL for playing back the recording.
+     */
+    public function getRecordingPlaybackUrl(): ?string
+    {
+        if (!empty($this->recording_url)) {
+            return $this->recording_url;
+        }
+
+        if (!empty($this->recording_path)) {
+            return route('telemarketing.play-recording', $this->id);
+        }
+
+        return null;
     }
 }

@@ -61,6 +61,7 @@
                                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Disposition</th>
                                 <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Attempt</th>
                                 <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Duration</th>
+                                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Recording</th>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
                             </tr>
                         </thead>
@@ -81,16 +82,78 @@
                                     <td class="px-4 py-3 text-sm text-center text-gray-600">
                                         {{ $log->call_duration_seconds ? gmdate('i:s', $log->call_duration_seconds) : '-' }}
                                     </td>
+                                    <td class="px-4 py-3 text-sm text-center">
+                                        @if($log->hasRecording())
+                                            <button onclick="toggleAudio(this, '{{ $log->getRecordingPlaybackUrl() }}')" class="inline-flex items-center px-2 py-1 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition" title="Play recording">
+                                                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                                                Play
+                                            </button>
+                                        @else
+                                            <span class="text-gray-400 text-xs">-</span>
+                                        @endif
+                                    </td>
                                     <td class="px-4 py-3 text-sm text-gray-600">{{ Str::limit($log->notes, 40) ?? '-' }}</td>
                                 </tr>
                             @empty
-                                <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500">No call logs found.</td></tr>
+                                <tr><td colspan="10" class="px-4 py-8 text-center text-sm text-gray-500">No call logs found.</td></tr>
                             @endforelse
                         </tbody>
                     </table>
                 </div>
                 <div class="px-4 py-3 border-t">{{ $logs->links() }}</div>
             </div>
+
+            {{-- Hidden audio player --}}
+            <div id="audio-player-container" class="hidden fixed bottom-4 right-4 bg-white shadow-xl rounded-lg p-4 border z-50">
+                <div class="flex items-center space-x-3">
+                    <audio id="global-audio-player" controls class="h-8"></audio>
+                    <button onclick="closeAudioPlayer()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
+
+    @push('scripts')
+    <script>
+        let currentPlayingBtn = null;
+
+        function toggleAudio(btn, url) {
+            const player = document.getElementById('global-audio-player');
+            const container = document.getElementById('audio-player-container');
+
+            if (currentPlayingBtn === btn && !player.paused) {
+                player.pause();
+                btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                return;
+            }
+
+            if (currentPlayingBtn) {
+                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+            }
+
+            player.src = url;
+            player.play();
+            container.classList.remove('hidden');
+            currentPlayingBtn = btn;
+            btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>Pause';
+
+            player.onended = function() {
+                btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                currentPlayingBtn = null;
+            };
+        }
+
+        function closeAudioPlayer() {
+            const player = document.getElementById('global-audio-player');
+            player.pause();
+            document.getElementById('audio-player-container').classList.add('hidden');
+            if (currentPlayingBtn) {
+                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                currentPlayingBtn = null;
+            }
+        }
+    </script>
+    @endpush
 </x-app-layout>

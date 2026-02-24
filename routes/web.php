@@ -10,6 +10,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Shipment\ShipmentController;
 use App\Http\Controllers\Sms\SmsCampaignController;
 use App\Http\Controllers\Telemarketing\TelemarketingController;
+use App\Http\Controllers\Api\RecordingController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -92,6 +93,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/telemarketing/transition-rules/{transitionRule}/toggle', [TelemarketingController::class, 'toggleTransitionRule'])->name('telemarketing.toggle-transition-rule');
             Route::delete('/telemarketing/transition-rules/{transitionRule}', [TelemarketingController::class, 'deleteTransitionRule'])->name('telemarketing.delete-transition-rule');
         });
+
+        // Recording playback (authenticated web route)
+        Route::get('/telemarketing/recording/{log}', [RecordingController::class, 'play'])->name('telemarketing.play-recording');
+
+        // Recording upload API (used by Android app, authenticated via session)
+        Route::post('/api/telemarketing/upload-recording', [RecordingController::class, 'upload'])->name('api.telemarketing.upload-recording');
 
         // SMS Campaigns
         Route::middleware('can:sms.campaigns.view')->group(function () {

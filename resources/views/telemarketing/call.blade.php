@@ -164,6 +164,16 @@
                                     <textarea id="notes" name="notes" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" placeholder="Any notes about the call...">{{ old('notes') }}</textarea>
                                 </div>
 
+                                {{-- Recording Status (shown when using Android app) --}}
+                                <div id="recording-status" class="mb-4 hidden">
+                                    <div class="flex items-center space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                        <svg class="w-5 h-5 text-green-600 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100 0h-3v-2.07z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        <span id="recording-status-text" class="text-sm text-green-700 font-medium">Call recording will be auto-uploaded</span>
+                                    </div>
+                                </div>
+
                                 {{-- Hidden call duration field --}}
                                 <input type="hidden" name="call_duration_seconds" id="call_duration_seconds" value="">
 
@@ -203,6 +213,18 @@
                                         </p>
                                         @if($log->notes)
                                             <p class="text-sm text-gray-700 mt-1">{{ $log->notes }}</p>
+                                        @endif
+                                        @if($log->hasRecording())
+                                            <div class="mt-2 bg-gray-50 rounded-md p-2">
+                                                <div class="flex items-center space-x-2">
+                                                    <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                                                    <audio controls preload="none" class="h-8 w-full max-w-xs">
+                                                        <source src="{{ $log->getRecordingPlaybackUrl() }}">
+                                                        Your browser does not support audio playback.
+                                                    </audio>
+                                                    <span class="text-xs text-green-600 font-medium whitespace-nowrap">Recorded</span>
+                                                </div>
+                                            </div>
                                         @endif
                                         @if($log->callback_at)
                                             <p class="text-xs text-orange-600 mt-1">
@@ -270,6 +292,18 @@
         document.getElementById('call-form').addEventListener('submit', function() {
             stopCallTimer();
         });
+
+        // Detect if running inside TeleSMS Android app
+        if (typeof TeleSMSBridge !== 'undefined') {
+            document.getElementById('recording-status').classList.remove('hidden');
+
+            // Notify the Android app about the current shipment for recording matching
+            try {
+                TeleSMSBridge.setCurrentShipment('{{ $shipment->id }}', '{{ $shipment->consignee_phone_1 }}');
+            } catch(e) {
+                console.log('Bridge setCurrentShipment not available:', e);
+            }
+        }
     </script>
     @endpush
 </x-app-layout>
