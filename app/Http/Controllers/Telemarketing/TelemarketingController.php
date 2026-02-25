@@ -123,9 +123,10 @@ class TelemarketingController extends Controller
             'callback_at' => 'nullable|date|after:now',
             'phone_called' => 'nullable|string|max:20',
             'call_duration_seconds' => 'nullable|integer|min:0',
+            'call_recording' => 'nullable|file|mimes:mp3,m4a,amr,wav,ogg,3gp,aac,opus,webm|max:51200',
         ]);
 
-        $this->telemarketingService->logCall(
+        $log = $this->telemarketingService->logCall(
             $shipment->id,
             $request->user()->id,
             $request->disposition_id,
@@ -134,6 +135,29 @@ class TelemarketingController extends Controller
             $request->phone_called,
             $request->call_duration_seconds
         );
+
+        // Handle manual recording upload
+        if ($request->hasFile('call_recording') && $log) {
+            $file = $request->file('call_recording');
+            $companyId = $request->user()->company_id;
+            $timestamp = now()->format('Y-m-d_His');
+            $extension = $file->getClientOriginalExtension() ?: 'mp3';
+            $filename = "recordings/{$companyId}/{$timestamp}_{$request->user()->id}_log{$log->id}.{$extension}";
+
+            $path = $file->storeAs('', $filename, 'local');
+
+            $log->update([
+                'recording_path' => $path,
+                'recording_url' => route('telemarketing.play-recording', $log->id),
+            ]);
+
+            \Illuminate\Support\Facades\Log::info('Manual recording uploaded via form', [
+                'path' => $path,
+                'size' => $file->getSize(),
+                'log_id' => $log->id,
+                'user_id' => $request->user()->id,
+            ]);
+        }
 
         if ($request->input('action') === 'save_next') {
             return redirect()->route('telemarketing.next-call', ['exclude' => $shipment->id]);

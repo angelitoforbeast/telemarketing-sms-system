@@ -115,7 +115,7 @@
                                 Log Call
                                 <span class="text-sm font-normal text-gray-500">(Attempt #{{ $shipment->telemarketing_attempt_count + 1 }})</span>
                             </h3>
-                            <form method="POST" action="{{ route('telemarketing.log-call', $shipment) }}" id="call-form">
+                            <form method="POST" action="{{ route('telemarketing.log-call', $shipment) }}" id="call-form" enctype="multipart/form-data">
                                 @csrf
 
                                 {{-- Disposition Grid --}}
@@ -176,6 +176,36 @@
 
                                 {{-- Hidden call duration field --}}
                                 <input type="hidden" name="call_duration_seconds" id="call_duration_seconds" value="">
+
+                                {{-- Manual Recording Upload --}}
+                                <div class="mb-4 p-4 bg-orange-50 border-2 border-orange-300 rounded-lg">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <h4 class="text-sm font-semibold text-orange-800">
+                                            <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100 0h-3v-2.07z" clip-rule="evenodd"></path></svg>
+                                            Upload Call Recording
+                                        </h4>
+                                        <span class="text-xs text-orange-600">Optional</span>
+                                    </div>
+                                    <p class="text-xs text-orange-600 mb-3">Attach the call recording file (.mp3, .m4a, .wav, .amr, etc.)</p>
+                                    <div class="flex items-center space-x-2">
+                                        <label for="call_recording" class="flex-1 cursor-pointer">
+                                            <div id="recording-drop-zone" class="flex items-center justify-center px-4 py-3 border-2 border-dashed border-orange-300 rounded-lg hover:border-orange-500 hover:bg-orange-100 transition">
+                                                <svg class="w-5 h-5 text-orange-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                                <span id="recording-file-name" class="text-sm text-orange-600">Choose recording file...</span>
+                                            </div>
+                                            <input type="file" id="call_recording" name="call_recording" accept="audio/*,.mp3,.m4a,.amr,.wav,.ogg,.3gp,.aac,.opus,.webm" class="hidden" onchange="handleRecordingFileSelect(this)">
+                                        </label>
+                                    </div>
+                                    <div id="recording-file-info" class="hidden mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center space-x-2">
+                                                <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                                <span id="recording-selected-name" class="text-sm text-green-700 font-medium"></span>
+                                            </div>
+                                            <button type="button" onclick="clearRecordingFile()" class="text-xs text-red-500 hover:text-red-700">Remove</button>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <div class="flex justify-end space-x-3">
                                     <button type="submit" name="action" value="save" class="inline-flex items-center px-4 py-2 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition">
@@ -292,6 +322,27 @@
         document.getElementById('call-form').addEventListener('submit', function() {
             stopCallTimer();
         });
+
+        // Recording file selection handling
+        function handleRecordingFileSelect(input) {
+            if (input.files && input.files[0]) {
+                var file = input.files[0];
+                var sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                document.getElementById('recording-file-name').textContent = file.name;
+                document.getElementById('recording-selected-name').textContent = file.name + ' (' + sizeMB + ' MB)';
+                document.getElementById('recording-file-info').classList.remove('hidden');
+                document.getElementById('recording-drop-zone').classList.add('border-green-400', 'bg-green-50');
+                document.getElementById('recording-drop-zone').classList.remove('border-orange-300');
+            }
+        }
+
+        function clearRecordingFile() {
+            document.getElementById('call_recording').value = '';
+            document.getElementById('recording-file-name').textContent = 'Choose recording file...';
+            document.getElementById('recording-file-info').classList.add('hidden');
+            document.getElementById('recording-drop-zone').classList.remove('border-green-400', 'bg-green-50');
+            document.getElementById('recording-drop-zone').classList.add('border-orange-300');
+        }
 
         // Detect if running inside TeleSMS Android app
         if (typeof TeleSMSBridge !== 'undefined') {
