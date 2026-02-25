@@ -18,7 +18,7 @@ class RecordingController extends Controller
     public function upload(Request $request)
     {
         $request->validate([
-            'recording' => 'required|file|mimes:mp3,m4a,amr,wav,ogg,3gp,aac,opus,webm|max:51200', // 50MB max
+            'recording' => 'required|file|max:51200', // 50MB max — MIME check relaxed for WebView/Android compatibility
             'shipment_id' => 'nullable|string',
             'log_id' => 'nullable|string',
             'phone_number' => 'nullable|string|max:20',

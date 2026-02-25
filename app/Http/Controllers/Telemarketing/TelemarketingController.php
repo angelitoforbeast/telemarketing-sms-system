@@ -123,7 +123,7 @@ class TelemarketingController extends Controller
             'callback_at' => 'nullable|date|after:now',
             'phone_called' => 'nullable|string|max:20',
             'call_duration_seconds' => 'nullable|integer|min:0',
-            'call_recording' => 'nullable|file|mimes:mp3,m4a,amr,wav,ogg,3gp,aac,opus,webm|max:51200',
+            'call_recording' => 'nullable|file|max:51200',
         ]);
 
         $log = $this->telemarketingService->logCall(
