@@ -166,7 +166,8 @@ class RecordingController extends Controller
                 ->where(function ($q) use ($cleanPhone) {
                     $q->where('phone_called', 'LIKE', '%' . substr($cleanPhone, -10) . '%')
                       ->orWhereHas('shipment', function ($sq) use ($cleanPhone) {
-                          $sq->where('consignee_phone', 'LIKE', '%' . substr($cleanPhone, -10) . '%');
+                          $sq->where('consignee_phone_1', 'LIKE', '%' . substr($cleanPhone, -10) . '%')
+                              ->orWhere('consignee_phone_2', 'LIKE', '%' . substr($cleanPhone, -10) . '%');
                       });
                 })
                 ->orderBy('created_at', 'desc')
