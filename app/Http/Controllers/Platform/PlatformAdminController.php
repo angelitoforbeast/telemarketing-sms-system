@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\PlatformRolePermission;
+use App\Models\AiSetting;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 
@@ -219,5 +220,33 @@ class PlatformAdminController extends Controller
         app()->make(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
         return back()->with('success', 'Global role permissions updated successfully.');
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    //  AI SETTINGS
+    // ────────────────────────────────────────────────────────────────
+
+    /**
+     * Show the AI settings page.
+     */
+    public function aiSettings()
+    {
+        $callAnalysisPrompt = AiSetting::getValue('call_analysis_prompt', '');
+
+        return view('platform.ai-settings', compact('callAnalysisPrompt'));
+    }
+
+    /**
+     * Update AI settings.
+     */
+    public function updateAiSettings(Request $request)
+    {
+        $request->validate([
+            'call_analysis_prompt' => 'required|string|min:10',
+        ]);
+
+        AiSetting::setValue('call_analysis_prompt', $request->call_analysis_prompt);
+
+        return back()->with('success', 'AI settings updated successfully.');
     }
 }

@@ -22,11 +22,15 @@ class TelemarketingLog extends Model
         'call_started_at',
         'recording_path',
         'recording_url',
+        'transcription',
+        'ai_summary',
+        'ai_analyzed_at',
     ];
 
     protected $casts = [
         'callback_at' => 'datetime',
         'call_started_at' => 'datetime',
+        'ai_analyzed_at' => 'datetime',
     ];
 
     public function shipment()

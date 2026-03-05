@@ -66,6 +66,9 @@
                         <x-nav-link :href="route('platform.permissions')" :active="request()->routeIs('platform.permissions*')">
                             Role Permissions
                         </x-nav-link>
+                        <x-nav-link :href="route('platform.ai-settings')" :active="request()->routeIs('platform.ai-settings*')">
+                            AI Settings
+                        </x-nav-link>
                     @endif
                 </div>
             </div>
@@ -137,6 +140,7 @@
                 <x-responsive-nav-link :href="route('platform.dashboard')" :active="request()->routeIs('platform.dashboard')">Platform Dashboard</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('platform.companies.index')" :active="request()->routeIs('platform.companies.*')">Companies</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('platform.permissions')" :active="request()->routeIs('platform.permissions*')">Role Permissions</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('platform.ai-settings')" :active="request()->routeIs('platform.ai-settings*')">AI Settings</x-responsive-nav-link>
             @endif
         </div>
         <div class="pt-4 pb-1 border-t border-gray-200">

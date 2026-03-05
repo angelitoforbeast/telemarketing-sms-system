@@ -15,6 +15,8 @@ use App\Models\CompanyTelemarketingSetting;
 use App\Models\StatusDispositionMapping;
 use App\Models\User;
 use App\Services\Telemarketing\TelemarketingService;
+use App\Services\CallAnalysisService;
+use App\Models\TelemarketingLog;
 use Illuminate\Http\Request;
 
 class TelemarketingController extends Controller
@@ -750,6 +752,43 @@ class TelemarketingController extends Controller
         $dispositions = $this->telemarketingService->getDispositions($companyId);
 
         return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions'));
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    //  AI CALL ANALYSIS
+    // ────────────────────────────────────────────────────────────────
+
+    public function analyzeCall(Request $request, TelemarketingLog $log)
+    {
+        $user = auth()->user();
+
+        // Platform Admin can analyze any log; company users can only analyze their own company's logs
+        if ($user->company_id && $log->shipment && $log->shipment->company_id !== $user->company_id) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+            }
+            abort(403);
+        }
+
+        if (!$log->hasRecording()) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'No recording found for this call log.']);
+            }
+            return back()->with('error', 'No recording found for this call log.');
+        }
+
+        $service = new CallAnalysisService();
+        $result = $service->analyze($log);
+
+        if ($request->expectsJson()) {
+            return response()->json($result);
+        }
+
+        if ($result['success']) {
+            return back()->with('success', $result['message']);
+        }
+
+        return back()->with('error', $result['message']);
     }
 
     // ────────────────────────────────────────────────────────────────

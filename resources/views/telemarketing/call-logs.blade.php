@@ -156,7 +156,7 @@
                                                 @elseif($log->status === 'draft')
                                                     <span class="text-yellow-600 text-xs italic">Pending save...</span>
                                                 @else
-                                                    <span class="text-gray-400 text-xs">N/A</span>
+                                                    <span class="text-gray-400 text-xs">-</span>
                                                 @endif
                                             </td>
                                             <td class="px-5 py-2.5 text-sm text-center">
@@ -176,21 +176,88 @@
                                                 {{ $log->call_duration_seconds ? gmdate('i:s', $log->call_duration_seconds) : '-' }}
                                             </td>
                                             <td class="px-5 py-2.5 text-sm text-center">
-                                                @if($log->hasRecording())
-                                                    <button onclick="event.stopPropagation(); toggleAudio(this, '{{ $log->getRecordingPlaybackUrl() }}')" class="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition" title="Play recording">
-                                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
-                                                        Play
-                                                    </button>
-                                                @else
-                                                    @if($log->status === 'draft')
-                                                        <span class="text-yellow-500 text-xs italic">Waiting...</span>
+                                                <div class="flex items-center justify-center gap-1.5">
+                                                    @if($log->hasRecording())
+                                                        {{-- Play button --}}
+                                                        <button onclick="event.stopPropagation(); toggleAudio(this, '{{ $log->getRecordingPlaybackUrl() }}')" class="inline-flex items-center px-2 py-1 bg-green-100 text-green-700 text-xs rounded-md hover:bg-green-200 transition" title="Play recording">
+                                                            <svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                                                            Play
+                                                        </button>
+
+                                                        {{-- AI Analyze / View button --}}
+                                                        @if($log->ai_analyzed_at)
+                                                            <button onclick="event.stopPropagation(); toggleAiPanel('ai-panel-{{ $log->id }}')" class="inline-flex items-center px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-md hover:bg-purple-200 transition" title="View AI Analysis">
+                                                                <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                                                                AI
+                                                            </button>
+                                                        @else
+                                                            <button onclick="event.stopPropagation(); analyzeCall(this, {{ $log->id }})" class="inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 text-xs rounded-md hover:bg-indigo-200 transition analyze-btn" title="Analyze with AI">
+                                                                <svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                                                                Analyze
+                                                            </button>
+                                                        @endif
                                                     @else
-                                                        <span class="text-gray-400 text-xs">-</span>
+                                                        @if($log->status === 'draft')
+                                                            <span class="text-yellow-500 text-xs italic">Waiting...</span>
+                                                        @else
+                                                            <span class="text-gray-400 text-xs">-</span>
+                                                        @endif
                                                     @endif
-                                                @endif
+                                                </div>
                                             </td>
                                             <td class="px-5 py-2.5 text-sm text-gray-600">{{ Str::limit($log->notes, 50) ?? '-' }}</td>
                                         </tr>
+
+                                        {{-- AI Result Panel (full-width below the row) --}}
+                                        @if($log->ai_analyzed_at)
+                                        <tr id="ai-panel-{{ $log->id }}" class="hidden">
+                                            <td colspan="9" class="p-0">
+                                                <div class="mx-4 my-3 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 shadow-sm overflow-hidden relative z-10">
+                                                    {{-- Header --}}
+                                                    <div class="flex items-center justify-between px-5 py-3 border-b border-indigo-100 bg-white/50">
+                                                        <div class="flex items-center gap-2">
+                                                            <div class="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
+                                                                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                                                            </div>
+                                                            <div>
+                                                                <h4 class="text-sm font-semibold text-gray-800">AI Call Analysis</h4>
+                                                                <p class="text-xs text-gray-400">Analyzed {{ $log->ai_analyzed_at->diffForHumans() }}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div class="flex items-center gap-2">
+                                                            <form method="POST" action="{{ route('telemarketing.analyze-call', $log) }}" onclick="event.stopPropagation()" class="inline">
+                                                                @csrf
+                                                                <button type="submit" class="inline-flex items-center px-2.5 py-1 text-xs text-gray-500 hover:text-indigo-600 hover:bg-indigo-100 rounded-md transition" title="Re-analyze this call" onclick="this.disabled=true; this.innerHTML='<svg class=\'w-3 h-3 animate-spin\' fill=\'none\' viewBox=\'0 0 24 24\'><circle class=\'opacity-25\' cx=\'12\' cy=\'12\' r=\'10\' stroke=\'currentColor\' stroke-width=\'4\'></circle><path class=\'opacity-75\' fill=\'currentColor\' d=\'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z\'></path></svg> Re-analyzing...'; this.form.submit();">
+                                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                                                    Re-analyze
+                                                                </button>
+                                                            </form>
+                                                            <button onclick="event.stopPropagation(); toggleAiPanel('ai-panel-{{ $log->id }}')" class="text-gray-400 hover:text-gray-600 p-1 rounded-md hover:bg-gray-100 transition" title="Close">
+                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {{-- Summary --}}
+                                                    <div class="px-5 py-4">
+                                                        <h5 class="text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-2">Summary</h5>
+                                                        <p class="text-sm text-gray-700 leading-relaxed bg-white rounded-lg p-4 border border-indigo-100 shadow-sm">{{ $log->ai_summary }}</p>
+                                                    </div>
+
+                                                    {{-- Transcription (collapsible) --}}
+                                                    <div class="px-5 pb-4">
+                                                        <details class="group">
+                                                            <summary class="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-indigo-600 transition select-none">
+                                                                <svg class="w-3 h-3 transform transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                                                Full Transcription
+                                                            </summary>
+                                                            <div class="mt-2 text-sm text-gray-600 bg-white rounded-lg p-4 border border-gray-200 max-h-64 overflow-y-auto leading-relaxed whitespace-pre-wrap">{{ $log->transcription }}</div>
+                                                        </details>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        @endif
                                     @endforeach
                                 </tbody>
                             </table>
@@ -215,11 +282,98 @@
                     </button>
                 </div>
             </div>
+
+            {{-- AI Analysis Loading Modal --}}
+            <div id="ai-loading-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
+                    <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <svg class="w-8 h-8 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-1">Analyzing Call</h3>
+                    <p class="text-sm text-gray-500 mb-3">Transcribing audio and generating AI summary...</p>
+                    <p class="text-xs text-gray-400">This may take 15-30 seconds</p>
+                </div>
+            </div>
         </div>
     </div>
 
+    {{-- Flash messages --}}
+    @if(session('success'))
+        <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)" class="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg" role="alert">
+            <div class="flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                {{ session('success') }}
+            </div>
+        </div>
+    @endif
+    @if(session('error'))
+        <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 8000)" class="fixed top-4 right-4 z-50 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg" role="alert">
+            <div class="flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+                {{ session('error') }}
+            </div>
+        </div>
+    @endif
+
     @push('scripts')
     <script>
+        function toggleAiPanel(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.toggle('hidden');
+            }
+        }
+
+        function analyzeCall(btn, logId) {
+            // Show loading modal
+            document.getElementById('ai-loading-modal').classList.remove('hidden');
+
+            // Disable button
+            btn.disabled = true;
+            btn.innerHTML = '<svg class="w-3 h-3 mr-0.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>...';
+
+            // Submit via AJAX
+            fetch('/telemarketing/analyze-call/' + logId, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Hide loading modal
+                document.getElementById('ai-loading-modal').classList.add('hidden');
+
+                if (data.success) {
+                    // Reload page to show results
+                    window.location.reload();
+                } else {
+                    alert('Analysis failed: ' + (data.message || 'Unknown error'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>Analyze';
+                }
+            })
+            .catch(error => {
+                document.getElementById('ai-loading-modal').classList.add('hidden');
+                // Fallback: submit as form
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/telemarketing/analyze-call/' + logId;
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = '_token';
+                csrf.value = document.querySelector('meta[name="csrf-token"]').content;
+                form.appendChild(csrf);
+                document.body.appendChild(form);
+                form.submit();
+            });
+        }
+
         function toggleHistory(id, row) {
             const el = document.getElementById(id);
             const arrow = row.querySelector('.expand-arrow');
@@ -240,22 +394,22 @@
 
             if (currentPlayingBtn === btn && !player.paused) {
                 player.pause();
-                btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                btn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
                 return;
             }
 
             if (currentPlayingBtn) {
-                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
             }
 
             player.src = url;
             player.play();
             container.classList.remove('hidden');
             currentPlayingBtn = btn;
-            btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>Pause';
+            btn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>Pause';
 
             player.onended = function() {
-                btn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                btn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
                 currentPlayingBtn = null;
             };
         }
@@ -265,7 +419,7 @@
             player.pause();
             document.getElementById('audio-player-container').classList.add('hidden');
             if (currentPlayingBtn) {
-                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
+                currentPlayingBtn.innerHTML = '<svg class="w-3 h-3 mr-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>Play';
                 currentPlayingBtn = null;
             }
         }
