@@ -736,7 +736,7 @@ class TelemarketingController extends Controller
 
         // Eager-load all logs for the paginated shipments (with user & disposition)
         $shipmentIds = $shipments->pluck('id');
-        $allLogs = \App\Models\TelemarketingLog::with(['user', 'disposition'])
+        $allLogs = \App\Models\TelemarketingLog::with(['user', 'disposition', 'aiDisposition'])
             ->whereIn('shipment_id', $shipmentIds)
             ->orderBy('created_at', 'desc')
             ->get()
@@ -784,6 +784,7 @@ class TelemarketingController extends Controller
             $html = '';
             if ($result['success']) {
                 $log->refresh();
+                $log->load(['disposition', 'aiDisposition']);
                 $html = view('telemarketing.partials.ai-result', ['log' => $log])->render();
             }
             return response()->json(array_merge($result, ['html' => $html]));

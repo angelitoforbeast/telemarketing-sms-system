@@ -25,6 +25,7 @@ class TelemarketingLog extends Model
         'transcription',
         'ai_summary',
         'ai_analyzed_at',
+        'ai_disposition_id',
     ];
 
     protected $casts = [
@@ -46,6 +47,10 @@ class TelemarketingLog extends Model
     public function disposition()
     {
         return $this->belongsTo(TelemarketingDisposition::class, 'disposition_id');
+    }
+    public function aiDisposition()
+    {
+        return $this->belongsTo(TelemarketingDisposition::class, 'ai_disposition_id');
     }
 
     /**

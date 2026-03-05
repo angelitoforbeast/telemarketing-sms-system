@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AiSetting;
 use App\Models\TelemarketingLog;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class CallAnalysisService
 {
     /**
-     * Analyze a call recording: transcribe + reformat as dialogue + summarize.
+     * Analyze a call recording: transcribe + reformat as dialogue + summarize + AI disposition.
      *
      * @param TelemarketingLog $log
      * @return array ['success' => bool, 'message' => string]
@@ -41,17 +42,24 @@ class CallAnalysisService
             // 4. Get the AI prompt from settings
             $analysisPrompt = AiSetting::getValue('call_analysis_prompt', $this->getDefaultPrompt());
 
-            // 5. Send raw transcription to GPT for BOTH dialogue reformat + summary (one API call)
-            $result = $this->reformatAndSummarize($rawTranscription, $analysisPrompt);
+            // 5. Get available dispositions from DB (for the log's company or system-wide)
+            $dispositions = $this->getAvailableDispositions($log);
 
-            // 6. Save results
+            // 6. Send raw transcription to GPT for dialogue reformat + summary + disposition (one API call)
+            $result = $this->reformatAndSummarize($rawTranscription, $analysisPrompt, $dispositions);
+
+            // 7. Resolve disposition ID from the AI's chosen disposition name
+            $aiDispositionId = $this->resolveDispositionId($result['disposition'], $dispositions);
+
+            // 8. Save results
             $log->update([
                 'transcription' => $result['dialogue'],
                 'ai_summary' => $result['summary'],
                 'ai_analyzed_at' => now(),
+                'ai_disposition_id' => $aiDispositionId,
             ]);
 
-            // 7. Clean up temp file if we created one
+            // 9. Clean up temp file if we created one
             if ($processedPath !== $recordingPath && file_exists($processedPath)) {
                 unlink($processedPath);
             }
@@ -65,6 +73,79 @@ class CallAnalysisService
             ]);
             return ['success' => false, 'message' => 'Analysis failed: ' . $e->getMessage()];
         }
+    }
+
+    /**
+     * Get available dispositions for the log's company context.
+     * Returns array of ['id' => int, 'name' => string]
+     */
+    protected function getAvailableDispositions(TelemarketingLog $log): array
+    {
+        $companyId = null;
+        if ($log->shipment) {
+            $companyId = $log->shipment->company_id;
+        }
+
+        $query = DB::table('telemarketing_dispositions')
+            ->select('id', 'name', 'code')
+            ->where(function ($q) use ($companyId) {
+                $q->whereNull('company_id'); // system dispositions
+                if ($companyId) {
+                    $q->orWhere('company_id', $companyId); // company custom dispositions
+                }
+            })
+            ->orderBy('sort_order')
+            ->get();
+
+        return $query->map(fn($d) => [
+            'id' => $d->id,
+            'name' => $d->name,
+            'code' => $d->code,
+        ])->toArray();
+    }
+
+    /**
+     * Resolve a disposition name (from AI) to its database ID.
+     * Uses fuzzy matching to handle slight variations.
+     */
+    protected function resolveDispositionId(string $aiDisposition, array $dispositions): ?int
+    {
+        if (empty($aiDisposition)) {
+            return null;
+        }
+
+        $aiDisposition = strtolower(trim($aiDisposition));
+
+        // Exact match first
+        foreach ($dispositions as $d) {
+            if (strtolower($d['name']) === $aiDisposition) {
+                return $d['id'];
+            }
+        }
+
+        // Partial match (AI response contains the disposition name or vice versa)
+        foreach ($dispositions as $d) {
+            $name = strtolower($d['name']);
+            if (str_contains($aiDisposition, $name) || str_contains($name, $aiDisposition)) {
+                return $d['id'];
+            }
+        }
+
+        // Code match
+        foreach ($dispositions as $d) {
+            if (strtolower($d['code']) === str_replace([' ', '-'], '_', $aiDisposition)) {
+                return $d['id'];
+            }
+        }
+
+        // Default to "Other" if no match found
+        foreach ($dispositions as $d) {
+            if ($d['code'] === 'other') {
+                return $d['id'];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -146,16 +227,20 @@ class CallAnalysisService
     }
 
     /**
-     * Send raw transcription to GPT for dialogue reformatting AND summary in one API call.
-     * Returns ['dialogue' => string, 'summary' => string]
+     * Send raw transcription to GPT for dialogue reformatting, summary, AND disposition in one API call.
+     * Returns ['dialogue' => string, 'summary' => string, 'disposition' => string]
      */
-    protected function reformatAndSummarize(string $rawTranscription, string $analysisPrompt): array
+    protected function reformatAndSummarize(string $rawTranscription, string $analysisPrompt, array $dispositions): array
     {
         $apiKey = config('services.openai.api_key', env('OPENAI_API_KEY'));
         $baseUrl = config('services.openai.base_url', env('OPENAI_BASE_URL', 'https://api.openai.com/v1'));
 
+        // Build the dispositions list for the prompt
+        $dispositionNames = array_map(fn($d) => $d['name'], $dispositions);
+        $dispositionList = implode("\n", array_map(fn($name) => "- {$name}", $dispositionNames));
+
         $systemPrompt = <<<PROMPT
-You are an AI assistant that processes telemarketing call transcriptions. You will receive a raw transcription from a speech-to-text system. You must do TWO things:
+You are an AI assistant that processes telemarketing call transcriptions. You will receive a raw transcription from a speech-to-text system. You must do THREE things:
 
 **TASK 1 - DIALOGUE REFORMAT:**
 Reformat the raw transcription into a clean, readable dialogue format. Rules:
@@ -171,14 +256,34 @@ Reformat the raw transcription into a clean, readable dialogue format. Rules:
 **TASK 2 - SUMMARY:**
 {$analysisPrompt}
 
+**TASK 3 - DISPOSITION:**
+Based on the conversation, determine the most appropriate call disposition from the following options:
+{$dispositionList}
+
+Choose the single best matching disposition. Consider:
+- If the customer agreed to accept delivery → "Answered - Will Accept"
+- If the customer wants redelivery → "Answered - Request Redeliver"
+- If the customer refused or wants to return → "Answered - Refused / RTS"
+- If the customer asked to be called back later → "Answered - Callback Requested"
+- If the customer expressed interest in reordering → "Answered - Reorder Interest"
+- If no one answered → "No Answer"
+- If the line was busy → "Busy"
+- If it was a wrong number → "Wrong Number"
+- If the number was not in service → "Not in Service"
+- If it went to voicemail → "Voicemail"
+- If none of the above clearly applies → "Other"
+
 **OUTPUT FORMAT:**
-You MUST respond in EXACTLY this format with the two sections separated by the delimiter:
+You MUST respond in EXACTLY this format with the three sections separated by the delimiters:
 
 ---DIALOGUE---
 (the reformatted dialogue here)
 
 ---SUMMARY---
 (the summary here)
+
+---DISPOSITION---
+(the exact disposition name from the list above, nothing else)
 PROMPT;
 
         $response = Http::timeout(90)
@@ -209,15 +314,24 @@ PROMPT;
     }
 
     /**
-     * Parse GPT response into dialogue and summary parts.
+     * Parse GPT response into dialogue, summary, and disposition parts.
      */
     protected function parseGptResponse(string $content, string $fallbackTranscription): array
     {
         $dialogue = $fallbackTranscription;
         $summary = 'No summary generated.';
+        $disposition = '';
 
         // Try to split by our delimiters
         if (str_contains($content, '---DIALOGUE---') && str_contains($content, '---SUMMARY---')) {
+            // Extract disposition first if present
+            if (str_contains($content, '---DISPOSITION---')) {
+                $parts = explode('---DISPOSITION---', $content, 2);
+                $disposition = trim($parts[1] ?? '');
+                $content = $parts[0]; // Remove disposition part for further parsing
+            }
+
+            // Extract dialogue and summary
             $parts = explode('---SUMMARY---', $content, 2);
             $dialoguePart = str_replace('---DIALOGUE---', '', $parts[0]);
             $summaryPart = $parts[1] ?? '';
@@ -241,6 +355,7 @@ PROMPT;
         return [
             'dialogue' => $dialogue,
             'summary' => $summary,
+            'disposition' => $disposition,
         ];
     }
 
