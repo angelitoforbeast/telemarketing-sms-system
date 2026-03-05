@@ -47,7 +47,7 @@ class StatusTransitionRule extends Model
 
     // ── Scopes ──
 
-    public function scopeForCompany($query, int $companyId)
+    public function scopeForCompany($query, ?int $companyId)
     {
         return $query->where('company_id', $companyId);
     }

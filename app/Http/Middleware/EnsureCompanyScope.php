@@ -16,7 +16,17 @@ class EnsureCompanyScope
     {
         $user = $request->user();
 
-        if (!$user || !$user->company_id) {
+        if (!$user) {
+            return redirect()->route('platform.dashboard');
+        }
+
+        // Allow Platform Admin to access company-scoped routes (they can see all)
+        if (!$user->company_id) {
+            if ($user->hasRole('Platform Admin')) {
+                view()->share('currentCompanyId', null);
+                view()->share('currentCompany', null);
+                return $next($request);
+            }
             return redirect()->route('platform.dashboard');
         }
 

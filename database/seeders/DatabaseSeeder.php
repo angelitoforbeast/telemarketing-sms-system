@@ -98,6 +98,18 @@ class DatabaseSeeder extends Seeder
             $createdTelemarketers[] = $tm;
         }
 
+        // ── Demo SMS Operator Account ──
+        $smsOperator = \App\Models\User::firstOrCreate(
+            ['email' => 'sms@demo.com'],
+            [
+                'name' => 'SMS Operator',
+                'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                'company_id' => $company->id,
+                'is_active' => true,
+            ]
+        );
+        $smsOperator->assignRole('SMS Operator');
+
         // ── Default Assignment Rules ──
         $returnStatus = \App\Models\ShipmentStatus::where('code', 'returned')->first();
         $forReturnStatus = \App\Models\ShipmentStatus::where('code', 'for_return')->first();

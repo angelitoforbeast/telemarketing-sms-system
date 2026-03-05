@@ -25,34 +25,45 @@ class TelemarketingService
      */
     public function getQueue(int $userId, int $companyId, array $filters = [], int $perPage = 25): LengthAwarePaginator
     {
+        $settings = \App\Models\CompanyTelemarketingSetting::getOrCreate($companyId);
+        $queueMode = $settings->queue_mode;
+
         $query = Shipment::with(['status', 'lastDisposition', 'assignedTo'])
             ->forCompany($companyId)
-            ->assignedTo($userId)
             ->telemarketable();
+
+        // Apply queue mode filter
+        if ($queueMode === 'pre_assigned') {
+            $query->assignedTo($userId);
+        } elseif ($queueMode === 'shared_queue') {
+            // Show all telemarketable shipments (assigned or unassigned)
+            // No assignedTo filter
+        } elseif ($queueMode === 'hybrid') {
+            // Show own assigned + unassigned pool
+            $query->where(function ($q) use ($userId) {
+                $q->where('assigned_to_user_id', $userId)
+                  ->orWhereNull('assigned_to_user_id');
+            });
+        }
 
         // Apply per-agent status filter (if configured)
         $this->applyAgentStatusFilter($query, $userId);
-
         // Filter by status
         if (!empty($filters['status_id'])) {
             $query->where('normalized_status_id', $filters['status_id']);
         }
-
         // Filter by courier
         if (!empty($filters['courier'])) {
             $query->where('courier', $filters['courier']);
         }
-
         // Filter: only callbacks due
         if (!empty($filters['callbacks_only'])) {
             $query->callbackDue();
         }
-
         // Filter: never contacted
         if (!empty($filters['never_contacted'])) {
             $query->neverContacted();
         }
-
         // Search by waybill or name
         if (!empty($filters['search'])) {
             $search = $filters['search'];
@@ -62,48 +73,69 @@ class TelemarketingService
                   ->orWhere('consignee_phone_1', 'like', "%{$search}%");
             });
         }
-
-        // Smart ordering: callbacks due first, then never-contacted, then oldest contacted
+        // Smart ordering: own assigned first (for hybrid), callbacks due, never-contacted, oldest
         $now = now()->toDateTimeString();
+        if ($queueMode === 'hybrid') {
+            $query->orderByRaw("CASE WHEN assigned_to_user_id = ? THEN 0 ELSE 1 END ASC", [$userId]);
+        }
         $query->orderByRaw("CASE WHEN callback_scheduled_at IS NOT NULL AND callback_scheduled_at <= ? THEN 0 ELSE 1 END ASC", [$now])
               ->orderByRaw("CASE WHEN telemarketing_attempt_count = 0 THEN 0 ELSE 1 END ASC")
               ->orderByRaw("last_contacted_at IS NULL DESC")
               ->orderBy('last_contacted_at', 'asc');
-
         return $query->paginate($perPage)->withQueryString();
     }
-
     /**
      * Get the next shipment to call for a telemarketer (auto-advance).
-     * Respects per-agent status assignments.
+     * Respects queue mode and per-agent status assignments.
      */
     public function getNextCall(int $userId, int $companyId, ?int $excludeShipmentId = null): ?Shipment
     {
+        $settings = \App\Models\CompanyTelemarketingSetting::getOrCreate($companyId);
+        $queueMode = $settings->queue_mode;
+
         $query = Shipment::with(['status', 'lastDisposition'])
             ->forCompany($companyId)
-            ->assignedTo($userId)
             ->telemarketable();
+
+        // Apply queue mode filter
+        if ($queueMode === 'pre_assigned') {
+            $query->assignedTo($userId);
+        } elseif ($queueMode === 'shared_queue') {
+            // Grab any available shipment — no assignment filter
+        } elseif ($queueMode === 'hybrid') {
+            // Prefer own assigned, then unassigned pool
+            $query->where(function ($q) use ($userId) {
+                $q->where('assigned_to_user_id', $userId)
+                  ->orWhereNull('assigned_to_user_id');
+            });
+        }
 
         // Apply per-agent status filter
         $this->applyAgentStatusFilter($query, $userId);
-
         if ($excludeShipmentId) {
             $query->where('id', '!=', $excludeShipmentId);
         }
-
-        // Priority: callbacks due > never contacted > oldest contacted
+        // Priority: own assigned first (hybrid), callbacks due > never contacted > oldest
         $now = now()->toDateTimeString();
-        return $query
+        if ($queueMode === 'hybrid') {
+            $query->orderByRaw("CASE WHEN assigned_to_user_id = ? THEN 0 ELSE 1 END ASC", [$userId]);
+        }
+        $shipment = $query
             ->orderByRaw("CASE WHEN callback_scheduled_at IS NOT NULL AND callback_scheduled_at <= ? THEN 0 ELSE 1 END ASC", [$now])
             ->orderByRaw("CASE WHEN telemarketing_attempt_count = 0 THEN 0 ELSE 1 END ASC")
             ->orderByRaw("last_contacted_at IS NULL DESC")
             ->orderBy('last_contacted_at', 'asc')
             ->first();
+
+        // For shared_queue and hybrid: auto-assign the grabbed shipment to this user
+        if ($shipment && $queueMode !== 'pre_assigned' && $shipment->assigned_to_user_id !== $userId) {
+            $shipment->update(['assigned_to_user_id' => $userId]);
+            $shipment->refresh();
+        }
+
+        return $shipment;
     }
 
-    /**
-     * Apply the per-agent status filter to a query.
-     */
     protected function applyAgentStatusFilter($query, int $userId): void
     {
         $allowedStatusIds = $this->getAgentAllowedStatusIds($userId);
@@ -180,17 +212,49 @@ class TelemarketingService
         $shipment = Shipment::findOrFail($shipmentId);
         $disposition = TelemarketingDisposition::findOrFail($dispositionId);
 
-        $log = TelemarketingLog::create([
-            'shipment_id' => $shipmentId,
-            'user_id' => $userId,
-            'disposition_id' => $dispositionId,
-            'notes' => $notes,
-            'attempt_no' => $shipment->telemarketing_attempt_count + 1,
-            'callback_at' => $callbackAt,
-            'phone_called' => $phoneCalled ?? $shipment->consignee_phone_1,
-            'call_duration_seconds' => $callDurationSeconds,
-            'call_started_at' => now(),
-        ]);
+        // Check if a draft row already exists (created when user clicked call button)
+        $existingDraft = TelemarketingLog::where('shipment_id', $shipmentId)
+            ->where('user_id', $userId)
+            ->where('status', 'draft')
+            ->first();
+
+        if ($existingDraft) {
+            // Update the existing draft row instead of creating a new one
+            $existingDraft->update([
+                'status' => 'completed',
+                'disposition_id' => $dispositionId,
+                'notes' => $notes,
+                'callback_at' => $callbackAt,
+                'phone_called' => $phoneCalled ?? $existingDraft->phone_called ?? $shipment->consignee_phone_1,
+                'call_duration_seconds' => $callDurationSeconds ?? $existingDraft->call_duration_seconds,
+            ]);
+            $log = $existingDraft;
+
+            Log::info('Draft log finalized', [
+                'log_id' => $log->id,
+                'shipment_id' => $shipmentId,
+                'has_recording' => !empty($log->recording_path),
+            ]);
+        } else {
+            // No draft exists — create a new completed row (fallback for non-Android usage)
+            $log = TelemarketingLog::create([
+                'shipment_id' => $shipmentId,
+                'user_id' => $userId,
+                'status' => 'completed',
+                'disposition_id' => $dispositionId,
+                'notes' => $notes,
+                'attempt_no' => $shipment->telemarketing_attempt_count + 1,
+                'callback_at' => $callbackAt,
+                'phone_called' => $phoneCalled ?? $shipment->consignee_phone_1,
+                'call_duration_seconds' => $callDurationSeconds,
+                'call_started_at' => now(),
+            ]);
+
+            Log::info('New completed log created (no draft)', [
+                'log_id' => $log->id,
+                'shipment_id' => $shipmentId,
+            ]);
+        }
 
         // Determine new telemarketing status based on disposition
         $newStatus = 'in_progress';
@@ -847,7 +911,7 @@ class TelemarketingService
     //  DISPOSITIONS
     // ────────────────────────────────────────────────────────────────
 
-    public function getDispositions(int $companyId)
+    public function getDispositions(?int $companyId)
     {
         return TelemarketingDisposition::forCompany($companyId)
             ->orderBy('sort_order')

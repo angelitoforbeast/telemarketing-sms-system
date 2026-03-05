@@ -98,9 +98,10 @@ class Shipment extends Model
 
     // ── Scopes ──
 
-    public function scopeForCompany(Builder $query, int $companyId): Builder
+    public function scopeForCompany(Builder $query, ?int $companyId): Builder
     {
-        return $query->where('company_id', $companyId);
+        if ($companyId === null) { return $query; }
+        return $query->where("company_id", $companyId);
     }
 
     public function scopeCourier(Builder $query, string $courier): Builder

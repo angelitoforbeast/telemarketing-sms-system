@@ -6,7 +6,10 @@
                 <span class="text-sm text-gray-500">|</span>
                 <span class="text-sm text-gray-500">{{ $queueCount }} remaining in queue</span>
             </div>
-            <div class="flex space-x-2">
+            <div class="flex items-center space-x-2">
+                @if($autoCallSettings->auto_call_enabled)
+                    <span class="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full">Auto-Call ON</span>
+                @endif
                 <a href="{{ route('telemarketing.queue') }}" class="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition">&larr; Back to Queue</a>
                 <a href="{{ route('telemarketing.next-call', ['exclude' => $shipment->id]) }}" class="text-sm text-white px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-700 transition">Skip &rarr;</a>
             </div>
@@ -24,6 +27,47 @@
                 </div>
             @endif
 
+            <div id="called-today-banner">
+            @if($calledToday)
+            @if($calledToday->status === 'draft')
+            <div class="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="w-6 h-6 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.828a1 1 0 101.415-1.414L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-amber-800">Called Today — Awaiting Disposition</p>
+                    <p class="text-xs text-amber-600">
+                        Called at {{ $calledToday->created_at->format("g:i A") }}
+                        by {{ $calledToday->user?->name ?? "N/A" }}
+                        @if($calledToday->call_duration_seconds)
+                            | Duration: {{ gmdate("i:s", $calledToday->call_duration_seconds) }}
+                        @endif
+                        — Please submit disposition below
+                    </p>
+                </div>
+            </div>
+            @else
+            <div class="mb-4 bg-green-50 border border-green-300 rounded-lg p-4 flex items-center space-x-3">
+                <div class="flex-shrink-0">
+                    <svg class="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-green-800">Already Called Today</p>
+                    <p class="text-xs text-green-600">
+                        Called at {{ $calledToday->created_at->format("g:i A") }}
+                        by {{ $calledToday->user?->name ?? "N/A" }}
+                        @if($calledToday->disposition)
+                            — {{ $calledToday->disposition->name }}
+                        @endif
+                        @if($calledToday->call_duration_seconds)
+                            | Duration: {{ gmdate("i:s", $calledToday->call_duration_seconds) }}
+                        @endif
+                    </p>
+                </div>
+            </div>
+            @endif
+            @endif
+            </div>
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {{-- LEFT: Shipment Info + Click-to-Call --}}
@@ -35,7 +79,7 @@
                         <div class="space-y-3">
                             @if($shipment->consignee_phone_1)
                                 <a href="tel:{{ $shipment->consignee_phone_1 }}" id="call-btn-1"
-                                   onclick="startCallTimer()"
+                                   onclick="handleCallClick(event, '{{ $shipment->consignee_phone_1 }}')"
                                    class="flex items-center justify-between p-3 bg-white/20 rounded-lg hover:bg-white/30 transition group">
                                     <div>
                                         <p class="text-xs text-green-100">Primary</p>
@@ -48,7 +92,7 @@
                             @endif
                             @if($shipment->consignee_phone_2)
                                 <a href="tel:{{ $shipment->consignee_phone_2 }}" id="call-btn-2"
-                                   onclick="startCallTimer()"
+                                   onclick="handleCallClick(event, '{{ $shipment->consignee_phone_2 }}')"
                                    class="flex items-center justify-between p-3 bg-white/20 rounded-lg hover:bg-white/30 transition group">
                                     <div>
                                         <p class="text-xs text-green-100">Secondary</p>
@@ -118,27 +162,56 @@
                             <form method="POST" action="{{ route('telemarketing.log-call', $shipment) }}" id="call-form" enctype="multipart/form-data">
                                 @csrf
 
-                                {{-- Disposition Grid --}}
+                                {{-- Disposition Button Cards --}}
                                 <div class="mb-4">
                                     <x-input-label value="Disposition *" class="mb-2" />
-                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-2" id="disposition-grid">
-                                        @foreach($dispositions as $d)
-                                            <label class="relative cursor-pointer">
-                                                <input type="radio" name="disposition_id" value="{{ $d->id }}" class="peer sr-only" required
-                                                       data-requires-callback="{{ $d->requires_callback ? '1' : '0' }}"
-                                                       onchange="handleDispositionChange(this)">
-                                                <div class="p-3 border-2 rounded-lg text-center transition
-                                                            peer-checked:border-{{ $d->color }}-500 peer-checked:bg-{{ $d->color }}-50
-                                                            border-gray-200 hover:border-gray-300">
-                                                    <span class="w-2 h-2 rounded-full inline-block bg-{{ $d->color }}-500 mr-1"></span>
-                                                    <span class="text-sm font-medium text-gray-700">{{ $d->name }}</span>
-                                                    @if($d->is_final)
-                                                        <span class="block text-xs text-gray-400 mt-0.5">Final</span>
-                                                    @endif
+                                    <input type="hidden" id="disposition_id" name="disposition_id" value="{{ old('disposition_id', '') }}" required>
+
+                                    @php
+                                        $grouped = $dispositions->groupBy('category');
+                                        $categoryLabels = \App\Models\TelemarketingDisposition::CATEGORY_LABELS;
+                                        $categoryOrder = ['answered', 'not_reached', 'invalid', 'other'];
+                                        $colorMap = [
+                                            'green'   => ['bg' => 'bg-green-50 border-green-300 hover:bg-green-100', 'active' => 'bg-green-500 border-green-600 text-white ring-2 ring-green-300', 'dot' => 'bg-green-500', 'text' => 'text-green-800'],
+                                            'blue'    => ['bg' => 'bg-blue-50 border-blue-300 hover:bg-blue-100', 'active' => 'bg-blue-500 border-blue-600 text-white ring-2 ring-blue-300', 'dot' => 'bg-blue-500', 'text' => 'text-blue-800'],
+                                            'red'     => ['bg' => 'bg-red-50 border-red-300 hover:bg-red-100', 'active' => 'bg-red-500 border-red-600 text-white ring-2 ring-red-300', 'dot' => 'bg-red-500', 'text' => 'text-red-800'],
+                                            'orange'  => ['bg' => 'bg-orange-50 border-orange-300 hover:bg-orange-100', 'active' => 'bg-orange-500 border-orange-600 text-white ring-2 ring-orange-300', 'dot' => 'bg-orange-500', 'text' => 'text-orange-800'],
+                                            'yellow'  => ['bg' => 'bg-yellow-50 border-yellow-300 hover:bg-yellow-100', 'active' => 'bg-yellow-500 border-yellow-600 text-white ring-2 ring-yellow-300', 'dot' => 'bg-yellow-500', 'text' => 'text-yellow-800'],
+                                            'purple'  => ['bg' => 'bg-purple-50 border-purple-300 hover:bg-purple-100', 'active' => 'bg-purple-500 border-purple-600 text-white ring-2 ring-purple-300', 'dot' => 'bg-purple-500', 'text' => 'text-purple-800'],
+                                            'emerald' => ['bg' => 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100', 'active' => 'bg-emerald-500 border-emerald-600 text-white ring-2 ring-emerald-300', 'dot' => 'bg-emerald-500', 'text' => 'text-emerald-800'],
+                                            'gray'    => ['bg' => 'bg-gray-50 border-gray-300 hover:bg-gray-100', 'active' => 'bg-gray-500 border-gray-600 text-white ring-2 ring-gray-300', 'dot' => 'bg-gray-500', 'text' => 'text-gray-800'],
+                                        ];
+                                    @endphp
+
+                                    <div class="space-y-3">
+                                        @foreach($categoryOrder as $cat)
+                                            @if($grouped->has($cat))
+                                                <div>
+                                                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">{{ $categoryLabels[$cat] ?? ucfirst($cat) }}</p>
+                                                    <div class="flex flex-wrap gap-2">
+                                                        @foreach($grouped[$cat] as $d)
+                                                            @php $c = $colorMap[$d->color] ?? $colorMap['gray']; @endphp
+                                                            <button type="button"
+                                                                    data-disposition-id="{{ $d->id }}"
+                                                                    data-requires-callback="{{ $d->requires_callback ? '1' : '0' }}"
+                                                                    data-color="{{ $d->color }}"
+                                                                    data-is-final="{{ $d->is_final ? '1' : '0' }}"
+                                                                    data-name="{{ $d->name }}"
+                                                                    data-active-class="{{ $c['active'] }}"
+                                                                    data-default-class="{{ $c['bg'] }} {{ $c['text'] }}"
+                                                                    onclick="selectDisposition(this)"
+                                                                    class="disposition-btn inline-flex items-center px-3 py-1.5 border rounded-full text-xs font-medium transition-all duration-150 cursor-pointer {{ $c['bg'] }} {{ $c['text'] }} {{ old('disposition_id') == $d->id ? $c['active'] : '' }}">
+                                                                <span class="w-2 h-2 rounded-full {{ $c['dot'] }} mr-1.5 flex-shrink-0"></span>
+                                                                {{ $d->name }}@if($d->is_final)<span class="ml-1 opacity-60 text-[10px]">(F)</span>@endif
+                                                            </button>
+                                                        @endforeach
+                                                    </div>
                                                 </div>
-                                            </label>
+                                            @endif
                                         @endforeach
                                     </div>
+
+                                    <div id="disposition-required-msg" class="hidden mt-2 text-xs text-red-500">Please select a disposition</div>
                                 </div>
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -216,17 +289,40 @@
                                         Save & Next Call
                                     </button>
                                 </div>
+
+                                {{-- Auto-Call Countdown Overlay --}}
+                                @if($autoCallSettings->auto_call_enabled)
+                                <div id="auto-call-overlay" class="hidden mt-4 p-4 bg-indigo-50 border-2 border-indigo-300 rounded-lg text-center">
+                                    <p class="text-sm text-indigo-700 font-medium mb-2">Auto-calling next number in...</p>
+                                    <p id="auto-call-countdown" class="text-4xl font-bold text-indigo-600 font-mono">{{ $autoCallSettings->auto_call_delay }}</p>
+                                    <p class="text-xs text-indigo-500 mt-1">seconds</p>
+                                    <div class="mt-3 flex justify-center space-x-3">
+                                        <button type="button" onclick="cancelAutoCall()" class="px-4 py-2 bg-white border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition">
+                                            Cancel
+                                        </button>
+                                        <button type="button" onclick="skipAutoCallCountdown()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition">
+                                            Call Now
+                                        </button>
+                                    </div>
+                                </div>
+                                @endif
                             </form>
                         </div>
                     </div>
 
                     {{-- Call History --}}
+                    <div id="call-history-container">
                     <div class="bg-white overflow-hidden shadow rounded-lg">
                         <div class="px-6 py-5">
                             <h3 class="text-lg font-medium text-gray-900 mb-4">Previous Calls ({{ $callHistory->count() }})</h3>
                             <div class="space-y-3">
                                 @forelse($callHistory as $log)
-                                    <div class="border rounded-lg p-3 {{ $loop->first ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200' }}">
+                                    <div class="border rounded-lg p-3 {{ $log->status === 'draft' ? 'border-amber-300 bg-amber-50' : ($loop->first ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200') }}">
+                                        @if($log->status === 'draft')
+                                        <div class="flex items-center space-x-1 mb-2">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending Disposition</span>
+                                        </div>
+                                        @endif
                                         <div class="flex justify-between items-start mb-1">
                                             <div class="flex items-center space-x-2">
                                                 <span class="text-sm font-semibold text-gray-900">Attempt #{{ $log->attempt_no }}</span>
@@ -269,6 +365,7 @@
                             </div>
                         </div>
                     </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -278,6 +375,72 @@
     <script>
         let callTimerInterval = null;
         let callStartTime = null;
+        let currentDraftLogId = null; // Stores the draft log ID for recording linking
+
+        /**
+         * Handle call button click: create draft log row FIRST, then start timer and dial.
+         * This ensures the log_id exists before the call recording starts.
+         */
+        function handleCallClick(event, phoneNumber) {
+            // Start the timer immediately for UX
+            startCallTimer();
+
+            // Create draft log via AJAX (fire-and-forget, don't block dialing)
+            createDraftLog(phoneNumber);
+
+            // The default href="tel:..." will handle the actual dialing
+            // No need to prevent default — let the <a> tag work normally
+        }
+
+        /**
+         * Create a draft telemarketing log row via API.
+         * This gives us a log_id that the Android auto-upload can use.
+         */
+        function createDraftLog(phoneNumber) {
+            var shipmentId = '{{ $shipment->id }}';
+
+            fetch('/api/telemarketing/create-draft-log', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    shipment_id: shipmentId,
+                    phone_number: phoneNumber
+                })
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success && data.log_id) {
+                    currentDraftLogId = data.log_id;
+                    console.log('Draft log created/reused: log_id=' + data.log_id + ' reused=' + data.reused);
+
+                    // Notify Android app about the draft log_id for recording upload
+                    if (typeof TeleSMSBridge !== 'undefined') {
+                        try {
+                            TeleSMSBridge.setDraftLogId(String(data.log_id));
+                            console.log('Sent draft log_id to Android: ' + data.log_id);
+                        } catch(e) {
+                            console.log('TeleSMSBridge.setDraftLogId not available:', e);
+                        }
+                    }
+
+                    // Update recording status text
+                    var statusText = document.getElementById('recording-status-text');
+                    if (statusText) {
+                        statusText.textContent = 'Draft log #' + data.log_id + ' ready — recording will auto-link';
+                    }
+                } else {
+                    console.error('Failed to create draft log:', data);
+                }
+            })
+            .catch(function(err) {
+                console.error('Error creating draft log:', err);
+            });
+        }
 
         function startCallTimer() {
             callStartTime = new Date();
@@ -306,9 +469,26 @@
             document.getElementById('call_duration_seconds').value = seconds;
         }
 
-        function handleDispositionChange(el) {
-            const requiresCallback = el.dataset.requiresCallback === '1';
-            const callbackField = document.getElementById('callback-field');
+        /**
+         * Select a disposition via button card click.
+         */
+        function selectDisposition(btn) {
+            var id = btn.dataset.dispositionId;
+            var requiresCallback = btn.dataset.requiresCallback === '1';
+
+            // Update hidden input
+            document.getElementById('disposition_id').value = id;
+
+            // Reset all buttons to default style
+            document.querySelectorAll('.disposition-btn').forEach(function(b) {
+                b.className = 'disposition-btn inline-flex items-center px-3 py-1.5 border rounded-full text-xs font-medium transition-all duration-150 cursor-pointer ' + b.dataset.defaultClass;
+            });
+
+            // Activate clicked button
+            btn.className = 'disposition-btn inline-flex items-center px-3 py-1.5 border rounded-full text-xs font-medium transition-all duration-150 cursor-pointer ' + btn.dataset.activeClass;
+
+            // Toggle callback field
+            var callbackField = document.getElementById('callback-field');
             if (requiresCallback) {
                 callbackField.classList.remove('hidden');
                 document.getElementById('callback_at').required = true;
@@ -316,10 +496,19 @@
                 callbackField.classList.add('hidden');
                 document.getElementById('callback_at').required = false;
             }
+
+            // Hide validation message
+            document.getElementById('disposition-required-msg').classList.add('hidden');
         }
 
-        // Auto-stop timer on form submit
-        document.getElementById('call-form').addEventListener('submit', function() {
+        // Auto-stop timer on form submit + validate disposition
+        document.getElementById('call-form').addEventListener('submit', function(e) {
+            var dispVal = document.getElementById('disposition_id').value;
+            if (!dispVal) {
+                e.preventDefault();
+                document.getElementById('disposition-required-msg').classList.remove('hidden');
+                return false;
+            }
             stopCallTimer();
         });
 
@@ -355,6 +544,121 @@
                 console.log('Bridge setCurrentShipment not available:', e);
             }
         }
+
+        // ── Auto-Call Mode ──
+        var autoCallEnabled = {{ $autoCallSettings->auto_call_enabled ? 'true' : 'false' }};
+        var autoCallDelay = {{ $autoCallSettings->auto_call_delay }};
+        var autoCallTimer = null;
+        var autoCallCountdownValue = 0;
+        var autoCallTriggered = false;
+
+        // Check URL param to see if we should auto-call (coming from save_next)
+        var urlParams = new URLSearchParams(window.location.search);
+        var fromAutoCall = urlParams.get('auto') === '1';
+
+        if (autoCallEnabled && fromAutoCall && '{{ $shipment->consignee_phone_1 }}') {
+            // Start auto-call countdown
+            startAutoCallCountdown();
+        }
+
+        function startAutoCallCountdown() {
+            var overlay = document.getElementById('auto-call-overlay');
+            if (!overlay) return;
+
+            overlay.classList.remove('hidden');
+            autoCallCountdownValue = autoCallDelay;
+            document.getElementById('auto-call-countdown').textContent = autoCallCountdownValue;
+
+            autoCallTimer = setInterval(function() {
+                autoCallCountdownValue--;
+                document.getElementById('auto-call-countdown').textContent = autoCallCountdownValue;
+
+                if (autoCallCountdownValue <= 0) {
+                    clearInterval(autoCallTimer);
+                    triggerAutoCall();
+                }
+            }, 1000);
+        }
+
+        function cancelAutoCall() {
+            if (autoCallTimer) {
+                clearInterval(autoCallTimer);
+                autoCallTimer = null;
+            }
+            var overlay = document.getElementById('auto-call-overlay');
+            if (overlay) overlay.classList.add('hidden');
+        }
+
+        function skipAutoCallCountdown() {
+            if (autoCallTimer) {
+                clearInterval(autoCallTimer);
+                autoCallTimer = null;
+            }
+            triggerAutoCall();
+        }
+
+        function triggerAutoCall() {
+            if (autoCallTriggered) return;
+            autoCallTriggered = true;
+
+            var overlay = document.getElementById('auto-call-overlay');
+            if (overlay) overlay.classList.add('hidden');
+
+            var phone = '{{ $shipment->consignee_phone_1 }}';
+            if (!phone) return;
+
+            // Start timer and create draft
+            handleCallClick(null, phone);
+
+            // Trigger the actual call via tel: link
+            window.location.href = 'tel:' + phone;
+        }
+
+        // ── Auto-refresh Previous Calls every 15 seconds ──
+        var callHistoryInterval = setInterval(function() {
+            fetch('/api/telemarketing/call-history/{{ $shipment->id }}', {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin'
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                // Update call history
+                var container = document.getElementById('call-history-container');
+                if (container && data.html) {
+                    var inner = container.querySelector('.px-6.py-5');
+                    if (inner) {
+                        inner.innerHTML = '<h3 class="text-lg font-medium text-gray-900 mb-4">Previous Calls (' + data.count + ')</h3><div class="space-y-3">' + data.html + '</div>';
+                    }
+                }
+
+                // Update the banner
+                var bannerContainer = document.getElementById('called-today-banner');
+                if (bannerContainer && data.calledToday) {
+                    var ct = data.calledToday;
+                    var bannerHtml = '';
+                    if (ct.status === 'draft') {
+                        bannerHtml = '<div class="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center space-x-3">'
+                            + '<div class="flex-shrink-0"><svg class="w-6 h-6 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.828a1 1 0 101.415-1.414L11 9.586V6z" clip-rule="evenodd"></path></svg></div>'
+                            + '<div><p class="text-sm font-semibold text-amber-800">Called Today — Awaiting Disposition</p>'
+                            + '<p class="text-xs text-amber-600">Called at ' + ct.time + ' by ' + ct.user
+                            + (ct.duration ? ' | Duration: ' + ct.duration : '')
+                            + ' — Please submit disposition below</p></div></div>';
+                    } else {
+                        bannerHtml = '<div class="mb-4 bg-green-50 border border-green-300 rounded-lg p-4 flex items-center space-x-3">'
+                            + '<div class="flex-shrink-0"><svg class="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg></div>'
+                            + '<div><p class="text-sm font-semibold text-green-800">Already Called Today</p>'
+                            + '<p class="text-xs text-green-600">Called at ' + ct.time + ' by ' + ct.user
+                            + (ct.disposition ? ' — ' + ct.disposition : '')
+                            + (ct.duration ? ' | Duration: ' + ct.duration : '')
+                            + '</p></div></div>';
+                    }
+                    bannerContainer.innerHTML = bannerHtml;
+                } else if (bannerContainer && !data.calledToday) {
+                    bannerContainer.innerHTML = '';
+                }
+            })
+            .catch(function(err) { console.log('Call history poll error:', err); });
+        }, 15000);
     </script>
     @endpush
 </x-app-layout>

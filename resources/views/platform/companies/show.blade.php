@@ -67,6 +67,7 @@
                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
@@ -83,9 +84,29 @@
                                             <x-badge :color="$user->is_active ? 'green' : 'red'">{{ $user->is_active ? 'Active' : 'Inactive' }}</x-badge>
                                         </td>
                                         <td class="px-4 py-3 text-sm text-gray-500">{{ $user->created_at->format('M d, Y') }}</td>
+                                        <td class="px-4 py-3 text-sm">
+                                            <div x-data="{ open: false, saving: false }">
+                                                <button @click="open = !open" type="button" class="text-xs px-2 py-1 rounded font-medium" :class="open ? 'bg-gray-200 text-gray-700' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'">
+                                                    <span x-show="!open">Change Password</span>
+                                                    <span x-show="open">Cancel</span>
+                                                </button>
+                                                <div x-show="open" x-transition class="mt-2">
+                                                    <form method="POST" action="{{ route('platform.companies.users.update-password', [$company, $user]) }}" @submit="saving = true">
+                                                        @csrf
+                                                        @method('PUT')
+                                                        <input type="password" name="password" placeholder="New password" required minlength="8" class="block w-full text-xs border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 mb-1" />
+                                                        <input type="password" name="password_confirmation" placeholder="Confirm password" required minlength="8" class="block w-full text-xs border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 mb-2" />
+                                                        <button type="submit" :disabled="saving" class="text-xs px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                                                            <span x-show="!saving">Save</span>
+                                                            <span x-show="saving">Saving...</span>
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="5" class="px-4 py-4 text-center text-sm text-gray-500">No users.</td></tr>
+                                    <tr><td colspan="6" class="px-4 py-4 text-center text-sm text-gray-500">No users.</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

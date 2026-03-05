@@ -111,7 +111,7 @@
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {{-- Manual Assignment Panel --}}
-                <div class="bg-white shadow rounded-lg">
+                <div class="bg-white shadow rounded-lg" style="overflow: visible;">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-semibold text-gray-800">Manual Assignment</h3>
                         <p class="text-sm text-gray-500 mt-1">
@@ -161,6 +161,172 @@
                                         <option value="jnt">JNT</option>
                                         <option value="flash">Flash Express</option>
                                     </select>
+                                </div>
+
+                                {{-- Shop Name multi-select --}}
+                                <div class="relative" :style="open ? 'z-index: 9999' : ''" x-data="assignMultiSelect('sender_name', {{ $shopNames->toJson() }})">
+                                    <x-input-label value="Filter by Shop Name (optional)" class="mb-1" />
+                                    <div @click="open = !open" class="w-full border rounded-lg text-sm bg-white cursor-pointer transition-all duration-150 min-h-[40px] flex flex-wrap items-center gap-1.5 px-3 py-2"
+                                         :class="open ? 'border-indigo-500 ring-2 ring-indigo-100 shadow-md' : 'border-gray-300 shadow-sm hover:border-gray-400'">
+                                        <span x-show="selected.length === 0" class="text-gray-400 select-none">All Shops</span>
+                                        <template x-for="tag in selected.slice(0, 3)" :key="tag">
+                                            <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-medium px-2 py-0.5 rounded-full border border-indigo-200">
+                                                <span x-text="tag.length > 18 ? tag.substring(0,18)+'...' : tag"></span>
+                                                <button type="button" @click.stop="toggleItem(tag)" class="text-indigo-400 hover:text-indigo-700 ml-0.5">
+                                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                                                </button>
+                                            </span>
+                                        </template>
+                                        <span x-show="selected.length > 3" class="text-xs text-indigo-500 font-semibold" x-text="'+' + (selected.length - 3) + ' more'"></span>
+                                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-auto transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </div>
+                                    <div x-show="open" x-cloak @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+                                         x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100 translate-y-0" x-transition:leave-end="opacity-0 -translate-y-1"
+                                         class="absolute z-[9999] w-full bg-white border border-gray-200 rounded-xl shadow-xl ring-1 ring-black/5" style="margin-top: 6px;">
+                                        <div class="p-2.5 border-b border-gray-100">
+                                            <div class="relative">
+                                                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                                <input type="text" x-model="searchText" placeholder="Search shops..." autocomplete="off"
+                                                    class="w-full pl-8 pr-3 py-2 border-gray-200 rounded-lg shadow-sm text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-gray-50 placeholder-gray-400" @click.stop />
+                                            </div>
+                                        </div>
+                                        <div x-show="selected.length > 0" class="px-2.5 pt-2 pb-1 border-b border-gray-100">
+                                            <p class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Selected (<span x-text="selected.length"></span>)</p>
+                                        </div>
+                                        <div style="max-height: 220px; overflow-y: auto; scrollbar-width: thin;">
+                                            <template x-for="item in filteredItems" :key="item">
+                                                <label class="flex items-center px-3 py-2 text-sm cursor-pointer transition-colors duration-75 hover:bg-gray-50 text-gray-700"
+                                                       :style="selected.includes(item) ? 'background-color: #eef2ff; color: #3730a3;' : ''" @click.stop>
+                                                    <span class="flex items-center justify-center w-4 h-4 rounded border mr-2.5 flex-shrink-0 transition-colors duration-75"
+                                                          :style="selected.includes(item) ? 'background-color: #4f46e5; border-color: #4f46e5;' : 'border-color: #d1d5db; background-color: white;'">
+                                                        <svg x-show="selected.includes(item)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                                    </span>
+                                                    <input type="checkbox" :value="item" :checked="selected.includes(item)" @change="toggleItem(item)" class="sr-only" />
+                                                    <span x-text="item" class="truncate"></span>
+                                                </label>
+                                            </template>
+                                            <div x-show="filteredItems.length === 0" class="px-3 py-4 text-sm text-gray-400 text-center">
+                                                <svg class="w-5 h-5 mx-auto mb-1 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                No shops found
+                                            </div>
+                                        </div>
+                                        <div class="px-3 py-2.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-b-xl">
+                                            <button type="button" @click="clearAll()" class="text-xs text-red-500 hover:text-red-700 font-medium transition-colors" x-show="selected.length > 0">Clear All</button>
+                                            <span x-show="selected.length === 0" class="text-xs text-gray-400">Select one or more shops</span>
+                                            <button type="button" @click="open = false" class="text-xs bg-indigo-600 text-white px-3 py-1 rounded-md hover:bg-indigo-700 font-medium transition-colors shadow-sm">Done</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Item Name multi-select --}}
+                                <div class="relative" :style="open ? 'z-index: 9998' : ''" x-data="assignMultiSelect('item_description', {{ $itemDescriptions->toJson() }})">
+                                    <x-input-label value="Filter by Item Name (optional)" class="mb-1" />
+                                    <div @click="open = !open" class="w-full border rounded-lg text-sm bg-white cursor-pointer transition-all duration-150 min-h-[40px] flex flex-wrap items-center gap-1.5 px-3 py-2"
+                                         :class="open ? 'border-indigo-500 ring-2 ring-indigo-100 shadow-md' : 'border-gray-300 shadow-sm hover:border-gray-400'">
+                                        <span x-show="selected.length === 0" class="text-gray-400 select-none">All Items</span>
+                                        <template x-for="tag in selected.slice(0, 3)" :key="tag">
+                                            <span class="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-medium px-2 py-0.5 rounded-full border border-indigo-200">
+                                                <span x-text="tag.length > 18 ? tag.substring(0,18)+'...' : tag"></span>
+                                                <button type="button" @click.stop="toggleItem(tag)" class="text-indigo-400 hover:text-indigo-700 ml-0.5">
+                                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                                                </button>
+                                            </span>
+                                        </template>
+                                        <span x-show="selected.length > 3" class="text-xs text-indigo-500 font-semibold" x-text="'+' + (selected.length - 3) + ' more'"></span>
+                                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-auto transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </div>
+                                    <div x-show="open" x-cloak @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+                                         x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100 translate-y-0" x-transition:leave-end="opacity-0 -translate-y-1"
+                                         class="absolute z-[9999] w-full bg-white border border-gray-200 rounded-xl shadow-xl ring-1 ring-black/5" style="margin-top: 6px;">
+                                        <div class="p-2.5 border-b border-gray-100">
+                                            <div class="relative">
+                                                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                                <input type="text" x-model="searchText" placeholder="Search items..." autocomplete="off"
+                                                    class="w-full pl-8 pr-3 py-2 border-gray-200 rounded-lg shadow-sm text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 bg-gray-50 placeholder-gray-400" @click.stop />
+                                            </div>
+                                        </div>
+                                        <div x-show="selected.length > 0" class="px-2.5 pt-2 pb-1 border-b border-gray-100">
+                                            <p class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Selected (<span x-text="selected.length"></span>)</p>
+                                        </div>
+                                        <div style="max-height: 220px; overflow-y: auto; scrollbar-width: thin;">
+                                            <template x-for="item in filteredItems" :key="item">
+                                                <label class="flex items-center px-3 py-2 text-sm cursor-pointer transition-colors duration-75 hover:bg-gray-50 text-gray-700"
+                                                       :style="selected.includes(item) ? 'background-color: #eef2ff; color: #3730a3;' : ''" @click.stop>
+                                                    <span class="flex items-center justify-center w-4 h-4 rounded border mr-2.5 flex-shrink-0 transition-colors duration-75"
+                                                          :style="selected.includes(item) ? 'background-color: #4f46e5; border-color: #4f46e5;' : 'border-color: #d1d5db; background-color: white;'">
+                                                        <svg x-show="selected.includes(item)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                                    </span>
+                                                    <input type="checkbox" :value="item" :checked="selected.includes(item)" @change="toggleItem(item)" class="sr-only" />
+                                                    <span x-text="item" class="truncate"></span>
+                                                </label>
+                                            </template>
+                                            <div x-show="filteredItems.length === 0" class="px-3 py-4 text-sm text-gray-400 text-center">
+                                                <svg class="w-5 h-5 mx-auto mb-1 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                No items found
+                                            </div>
+                                        </div>
+                                        <div class="px-3 py-2.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-b-xl">
+                                            <button type="button" @click="clearAll()" class="text-xs text-red-500 hover:text-red-700 font-medium transition-colors" x-show="selected.length > 0">Clear All</button>
+                                            <span x-show="selected.length === 0" class="text-xs text-gray-400">Select one or more items</span>
+                                            <button type="button" @click="open = false" class="text-xs bg-indigo-600 text-white px-3 py-1 rounded-md hover:bg-indigo-700 font-medium transition-colors shadow-sm">Done</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Filter by Disposition (optional) --}}
+                                <div class="relative" x-data="assignMultiSelect('disposition', [
+                                    {id: 'no_disposition', name: 'No Disposition', desc: 'Never been called'},
+                                    {id: 'no_disposition_today', name: 'No Disposition Today', desc: 'No call yet today'},
+                                    @foreach($dispositions as $disp)
+                                        {id: '{{ $disp->id }}', name: '{{ addslashes($disp->name) }}', desc: '{{ addslashes($disp->description ?? '') }}'},
+                                    @endforeach
+                                ], [])" :style="open ? 'z-index: 9997' : ''">
+                                    <x-input-label value="Filter by Disposition (optional)" />
+                                    <div @click="open = !open" class="mt-1 w-full border border-gray-300 rounded-md shadow-sm text-sm px-3 py-2 bg-white cursor-pointer flex items-center gap-1.5 min-h-[38px] flex-wrap"
+                                         :style="open ? 'border-color: #818cf8; box-shadow: 0 0 0 2px rgba(99,102,241,0.15);' : ''">
+                                        <span x-show="selected.length === 0" class="text-gray-400">All Dispositions</span>
+                                        <template x-for="tag in selected.slice(0, 3)" :key="tag">
+                                            <span class="inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full border border-amber-200">
+                                                <span x-text="getDisplayName(tag).length > 16 ? getDisplayName(tag).substring(0,16)+'...' : getDisplayName(tag)"></span>
+                                                <button type="button" @click.stop="toggleItem(tag)" class="text-amber-400 hover:text-amber-700 ml-0.5">
+                                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                                                </button>
+                                            </span>
+                                        </template>
+                                        <span x-show="selected.length > 3" class="text-xs text-amber-500 font-semibold" x-text="'+' + (selected.length - 3) + ' more'"></span>
+                                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-auto transition-transform duration-200" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </div>
+                                    <div x-show="open" x-cloak @click.away="open = false"
+                                         x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0"
+                                         x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100 translate-y-0" x-transition:leave-end="opacity-0 -translate-y-1"
+                                         class="absolute z-[9999] w-full bg-white border border-gray-200 rounded-xl shadow-xl ring-1 ring-black/5" style="margin-top: 6px;">
+                                        <div x-show="selected.length > 0" class="px-2.5 pt-2 pb-1 border-b border-gray-100">
+                                            <p class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">Selected (<span x-text="selected.length"></span>)</p>
+                                        </div>
+                                        <div style="max-height: 260px; overflow-y: auto; scrollbar-width: thin;">
+                                            <template x-for="item in allItems" :key="item.id">
+                                                <label class="flex items-center px-3 py-2 text-sm cursor-pointer transition-colors duration-75 hover:bg-gray-50 text-gray-700"
+                                                       :style="selected.includes(item.id) ? 'background-color: #fffbeb; color: #92400e;' : ''" @click.stop>
+                                                    <span class="flex items-center justify-center w-4 h-4 rounded border mr-2.5 flex-shrink-0 transition-colors duration-75"
+                                                          :style="selected.includes(item.id) ? 'background-color: #d97706; border-color: #d97706;' : 'border-color: #d1d5db; background-color: white;'">
+                                                        <svg x-show="selected.includes(item.id)" class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                                    </span>
+                                                    <input type="checkbox" :value="item.id" :checked="selected.includes(item.id)" @change="toggleItem(item.id)" class="sr-only" />
+                                                    <div class="flex flex-col">
+                                                        <span x-text="item.name" class="truncate font-medium"></span>
+                                                        <span x-show="item.desc" x-text="item.desc" class="text-[11px] text-gray-400 truncate"></span>
+                                                    </div>
+                                                </label>
+                                            </template>
+                                        </div>
+                                        <div class="px-3 py-2.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/50 rounded-b-xl">
+                                            <button type="button" @click="clearAll()" class="text-xs text-red-500 hover:text-red-700 font-medium transition-colors" x-show="selected.length > 0">Clear All</button>
+                                            <span x-show="selected.length === 0" class="text-xs text-gray-400">Select one or more dispositions</span>
+                                            <button type="button" @click="open = false" class="text-xs bg-amber-600 text-white px-3 py-1 rounded-md hover:bg-amber-700 font-medium transition-colors shadow-sm">Done</button>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -541,6 +707,45 @@
     <script>
         const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
+        // ── Multi-select dropdown for manual assignment filters ──
+        function assignMultiSelect(name, items, initialSelected) {
+            // Detect if items are objects (disposition) or strings (shop/item)
+            const isObjectMode = items.length > 0 && typeof items[0] === 'object';
+            return {
+                name: name,
+                items: isObjectMode ? [] : items,
+                allItems: isObjectMode ? items : [],
+                selected: initialSelected || [],
+                searchText: '',
+                open: false,
+                get filteredItems() {
+                    if (isObjectMode) {
+                        // Object mode not used for filteredItems — uses allItems directly
+                        return [];
+                    }
+                    if (!this.searchText) return this.items;
+                    const search = this.searchText.toLowerCase();
+                    return this.items.filter(item => item.toLowerCase().includes(search));
+                },
+                getDisplayName(id) {
+                    if (!isObjectMode) return id;
+                    const found = this.allItems.find(i => i.id === id || String(i.id) === String(id));
+                    return found ? found.name : id;
+                },
+                toggleItem(item) {
+                    const idx = this.selected.indexOf(item);
+                    if (idx > -1) {
+                        this.selected.splice(idx, 1);
+                    } else {
+                        this.selected.push(item);
+                    }
+                },
+                clearAll() {
+                    this.selected = [];
+                }
+            };
+        }
+
         // ── Status name map for strict validation ──
         const statusNameMap = {
             @foreach($statuses as $status)
@@ -842,6 +1047,44 @@
                 const formData = new FormData(form);
                 const body = {};
                 formData.forEach((v, k) => { if (v) body[k] = v; });
+
+                // Collect multi-select values from Alpine components
+                const senderNameEl = document.querySelector('[x-data*="sender_name"]');
+                const itemDescEl = document.querySelector('[x-data*="item_description"]');
+                if (senderNameEl && senderNameEl.__x) {
+                    const senderSelected = senderNameEl.__x.$data.selected;
+                    if (senderSelected && senderSelected.length > 0) body.sender_name = senderSelected;
+                }
+                if (itemDescEl && itemDescEl.__x) {
+                    const itemSelected = itemDescEl.__x.$data.selected;
+                    if (itemSelected && itemSelected.length > 0) body.item_description = itemSelected;
+                }
+                // Collect disposition multi-select values
+                const dispositionEl = document.querySelector('[x-data*="disposition"]');
+                if (dispositionEl && dispositionEl.__x) {
+                    const dispSelected = dispositionEl.__x.$data.selected;
+                    if (dispSelected && dispSelected.length > 0) body.disposition = dispSelected;
+                }
+
+                // Also try Alpine.$data for newer Alpine versions
+                if (!body.sender_name && senderNameEl) {
+                    try {
+                        const sd = Alpine.$data(senderNameEl);
+                        if (sd && sd.selected && sd.selected.length > 0) body.sender_name = sd.selected;
+                    } catch(e) {}
+                }
+                if (!body.item_description && itemDescEl) {
+                    try {
+                        const id = Alpine.$data(itemDescEl);
+                        if (id && id.selected && id.selected.length > 0) body.item_description = id.selected;
+                    } catch(e) {}
+                }
+                if (!body.disposition && dispositionEl) {
+                    try {
+                        const dd = Alpine.$data(dispositionEl);
+                        if (dd && dd.selected && dd.selected.length > 0) body.disposition = dd.selected;
+                    } catch(e) {}
+                }
 
                 const res = await fetch('{{ route("telemarketing.manual-assign") }}', {
                     method: 'POST',

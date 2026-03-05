@@ -27,7 +27,22 @@ class ShipmentController extends Controller
         $statuses = ShipmentStatus::orderBy('sort_order')->get();
         $telemarketers = User::forCompany($companyId)->active()->role('Telemarketer')->get();
 
-        return view('shipments.index', compact('shipments', 'statuses', 'telemarketers'));
+        // Get unique shop names and item descriptions for searchable dropdown filters
+        $shopNames = Shipment::forCompany($companyId)
+            ->whereNotNull('sender_name')
+            ->where('sender_name', '!=', '')
+            ->distinct()
+            ->orderBy('sender_name')
+            ->pluck('sender_name');
+
+        $itemDescriptions = Shipment::forCompany($companyId)
+            ->whereNotNull('item_description')
+            ->where('item_description', '!=', '')
+            ->distinct()
+            ->orderBy('item_description')
+            ->pluck('item_description');
+
+        return view('shipments.index', compact('shipments', 'statuses', 'telemarketers', 'shopNames', 'itemDescriptions'));
     }
 
     /**

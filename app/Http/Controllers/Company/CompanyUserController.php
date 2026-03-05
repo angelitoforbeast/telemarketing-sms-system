@@ -87,18 +87,31 @@ class CompanyUserController extends Controller
     {
         $this->authorizeCompanyUser($targetUser);
 
-        $request->validate([
+        $rules = [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $targetUser->id,
             'role' => 'required|string|exists:roles,name',
             'is_active' => 'boolean',
-        ]);
+        ];
 
-        $targetUser->update([
+        // Only validate password if provided
+        if ($request->filled('password')) {
+            $rules['password'] = 'required|string|min:8|confirmed';
+        }
+
+        $request->validate($rules);
+
+        $data = [
             'name' => $request->name,
             'email' => $request->email,
             'is_active' => $request->boolean('is_active', true),
-        ]);
+        ];
+
+        if ($request->filled('password')) {
+            $data['password'] = $request->password;
+        }
+
+        $targetUser->update($data);
 
         $targetUser->syncRoles([$request->role]);
 

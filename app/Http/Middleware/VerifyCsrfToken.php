@@ -13,5 +13,7 @@ class VerifyCsrfToken extends Middleware
      */
     protected $except = [
         'api/telemarketing/upload-recording',
+        'api/telemarketing/create-draft-log',
+        'api/sms-blast/*',
     ];
 }

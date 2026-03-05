@@ -84,6 +84,32 @@
                     </div>
                 </form>
             </div>
+
+            {{-- Telemarketing Settings Link --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mt-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Telemarketing Settings</h3>
+                        <p class="text-sm text-gray-500 mt-1">Configure auto-call mode, queue mode, and disposition mapping.</p>
+                    </div>
+                    <a href="{{ route('settings.telemarketing') }}" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition">
+                        Manage &rarr;
+                    </a>
+                </div>
+            </div>
+
+            {{-- Role Permissions Link --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mt-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Role Permissions</h3>
+                        <p class="text-sm text-gray-500 mt-1">Manage what each role can view, access, and edit in your company.</p>
+                    </div>
+                    <a href="{{ route('settings.role-permissions') }}" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md hover:bg-emerald-700 transition">
+                        Manage &rarr;
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 

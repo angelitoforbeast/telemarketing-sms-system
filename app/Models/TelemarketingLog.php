@@ -13,6 +13,7 @@ class TelemarketingLog extends Model
         'shipment_id',
         'user_id',
         'disposition_id',
+        'status',
         'notes',
         'attempt_no',
         'callback_at',

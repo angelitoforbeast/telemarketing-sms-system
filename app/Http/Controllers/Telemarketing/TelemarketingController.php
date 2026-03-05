@@ -11,6 +11,8 @@ use App\Models\ShipmentStatus;
 use App\Models\StatusTransitionRule;
 use App\Models\TelemarketingAssignmentRule;
 use App\Models\TelemarketingDisposition;
+use App\Models\CompanyTelemarketingSetting;
+use App\Models\StatusDispositionMapping;
 use App\Models\User;
 use App\Services\Telemarketing\TelemarketingService;
 use Illuminate\Http\Request;
@@ -89,7 +91,11 @@ class TelemarketingController extends Controller
                 ->with('info', 'No more shipments in your queue. Great job!');
         }
 
-        return redirect()->route('telemarketing.call', $next);
+        $params = ['shipment' => $next->id];
+        if ($request->input('auto') === '1') {
+            $params['auto'] = '1';
+        }
+        return redirect()->route('telemarketing.call', $params);
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -102,15 +108,33 @@ class TelemarketingController extends Controller
 
         $shipment->load(['status', 'telemarketingLogs.disposition', 'telemarketingLogs.user', 'lastDisposition']);
 
-        $dispositions = $this->telemarketingService->getDispositions(auth()->user()->company_id);
+        $companyId = auth()->user()->company_id;
+
+        // Get dispositions filtered by shipment status
+        $statusId = $shipment->normalized_status_id;
+        $dispositions = StatusDispositionMapping::getDispositionsForStatus($statusId, $companyId);
+
+        // Fallback: if no mapping exists for this status, show all dispositions
+        if ($dispositions->isEmpty()) {
+            $dispositions = $this->telemarketingService->getDispositions($companyId);
+        }
+
         $callHistory = $this->telemarketingService->getCallHistory($shipment->id);
 
-        $queueCount = Shipment::forCompany(auth()->user()->company_id)
+        // Check if this shipment was already called today
+        $calledToday = $callHistory->first(function ($log) {
+            return $log->created_at->isToday();
+        });
+
+        $queueCount = Shipment::forCompany($companyId)
             ->assignedTo(auth()->id())
             ->telemarketable()
             ->count();
 
-        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'queueCount'));
+        // Get auto-call settings for this company
+        $autoCallSettings = CompanyTelemarketingSetting::getOrCreate($companyId);
+
+        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'calledToday', 'queueCount', 'autoCallSettings'));
     }
 
     public function logCall(Request $request, Shipment $shipment)
@@ -160,7 +184,13 @@ class TelemarketingController extends Controller
         }
 
         if ($request->input('action') === 'save_next') {
-            return redirect()->route('telemarketing.next-call', ['exclude' => $shipment->id]);
+            // Check if auto-call is enabled for this company
+            $autoCallSettings = CompanyTelemarketingSetting::getOrCreate($request->user()->company_id);
+            $params = ['exclude' => $shipment->id];
+            if ($autoCallSettings->auto_call_enabled) {
+                $params['auto'] = '1';
+            }
+            return redirect()->route('telemarketing.next-call', $params);
         }
 
         return redirect()->route('telemarketing.queue')
@@ -201,8 +231,29 @@ class TelemarketingController extends Controller
         $agentStatusMap = $this->telemarketingService->getAllAgentStatusAssignments($companyId);
         $transitionRules = $this->telemarketingService->getTransitionRules($companyId);
 
+        // Shop names and item descriptions for manual assignment filters
+        $shopNames = Shipment::forCompany($companyId)
+            ->whereNotNull('sender_name')
+            ->where('sender_name', '!=', '')
+            ->distinct()
+            ->orderBy('sender_name')
+            ->pluck('sender_name');
+
+        $itemDescriptions = Shipment::forCompany($companyId)
+            ->whereNotNull('item_description')
+            ->where('item_description', '!=', '')
+            ->distinct()
+            ->orderBy('item_description')
+            ->pluck('item_description');
+
+        // Dispositions for manual assignment filter
+        $dispositions = TelemarketingDisposition::forCompany($companyId)
+            ->orderBy('sort_order')
+            ->get();
+
         return view('telemarketing.assignments', compact(
-            'telemarketers', 'unassignedCount', 'onCooldownCount', 'statuses', 'rules', 'agentStatusMap', 'transitionRules'
+            'telemarketers', 'unassignedCount', 'onCooldownCount', 'statuses', 'rules', 'agentStatusMap', 'transitionRules',
+            'shopNames', 'itemDescriptions', 'dispositions'
         ));
     }
 
@@ -328,6 +379,12 @@ class TelemarketingController extends Controller
             'telemarketer_id' => 'required|integer|exists:users,id',
             'status_id' => 'nullable|integer|exists:shipment_statuses,id',
             'courier' => 'nullable|in:jnt,flash',
+            'sender_name' => 'nullable|array',
+            'sender_name.*' => 'string',
+            'item_description' => 'nullable|array',
+            'item_description.*' => 'string',
+            'disposition' => 'nullable|array',
+            'disposition.*' => 'string',
             'limit' => 'nullable|integer|min:1|max:5000',
         ]);
 
@@ -365,6 +422,49 @@ class TelemarketingController extends Controller
 
         if ($request->courier) {
             $query->where('courier', $request->courier);
+        }
+
+        if ($request->sender_name && is_array($request->sender_name) && count($request->sender_name) > 0) {
+            $query->whereIn('sender_name', $request->sender_name);
+        }
+
+        if ($request->item_description && is_array($request->item_description) && count($request->item_description) > 0) {
+            $query->whereIn('item_description', $request->item_description);
+        }
+
+        // Disposition filter
+        if ($request->disposition && is_array($request->disposition) && count($request->disposition) > 0) {
+            $dispositionFilters = $request->disposition;
+            $hasNoDisposition = in_array('no_disposition', $dispositionFilters);
+            $hasNoDispositionToday = in_array('no_disposition_today', $dispositionFilters);
+            // Get actual disposition IDs (numeric values)
+            $dispositionIds = array_filter($dispositionFilters, fn($v) => is_numeric($v));
+
+            $query->where(function ($q) use ($hasNoDisposition, $hasNoDispositionToday, $dispositionIds) {
+                // No Disposition = never been called (zero entries in telemarketing_logs)
+                if ($hasNoDisposition) {
+                    $q->orWhereDoesntHave('telemarketingLogs');
+                }
+
+                // No Disposition Today = no call log entry created today
+                if ($hasNoDispositionToday) {
+                    $q->orWhere(function ($sub) {
+                        $sub->whereDoesntHave('telemarketingLogs', function ($logQ) {
+                            $logQ->whereDate('created_at', today());
+                        });
+                    });
+                }
+
+                // Specific disposition IDs = latest log has that disposition
+                if (!empty($dispositionIds)) {
+                    $q->orWhereHas('telemarketingLogs', function ($logQ) use ($dispositionIds) {
+                        $logQ->whereIn('disposition_id', $dispositionIds)
+                             ->whereColumn('telemarketing_logs.id', '=',
+                                 \DB::raw('(SELECT MAX(tl2.id) FROM telemarketing_logs tl2 WHERE tl2.shipment_id = shipments.id)')
+                             );
+                    });
+                }
+            });
         }
 
         $limit = $request->limit ?? 100;
@@ -593,49 +693,154 @@ class TelemarketingController extends Controller
 
     public function callLogs(Request $request)
     {
-        $companyId = $request->user()->company_id;
+        $user = $request->user();
+        $companyId = $user->company_id;
 
-        $query = \App\Models\TelemarketingLog::with(['shipment', 'user', 'disposition'])
-            ->whereHas('shipment', fn ($q) => $q->forCompany($companyId))
-            ->orderBy('created_at', 'desc');
+        // Build a query on Shipments that have telemarketing logs
+        $query = Shipment::with(['status', 'lastDisposition'])
+            ->whereHas('telemarketingLogs')
+            ->withCount('telemarketingLogs as total_calls')
+            ->orderBy('last_contacted_at', 'desc');
 
+        // Platform Admin sees all, company users see only their company
+        if ($companyId) {
+            $query->forCompany($companyId);
+        }
+
+        // Filter by telemarketer — only show shipments that have logs by this agent
         if ($request->filled('telemarketer_id')) {
-            $query->where('user_id', $request->telemarketer_id);
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('user_id', $request->telemarketer_id));
         }
 
+        // Filter by disposition
         if ($request->filled('disposition_id')) {
-            $query->where('disposition_id', $request->disposition_id);
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('disposition_id', $request->disposition_id));
         }
 
+        // Filter by date range (based on log created_at)
         if ($request->filled('date_from')) {
-            $query->where('created_at', '>=', $request->date_from);
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '>=', $request->date_from));
         }
         if ($request->filled('date_to')) {
-            $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '<=', $request->date_to . ' 23:59:59'));
         }
 
-        $logs = $query->paginate(50)->withQueryString();
+        // Filter by status (draft/completed) — show shipments that have at least one log with this status
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('status', $request->status));
+        }
 
-        $telemarketers = User::forCompany($companyId)->active()->role('Telemarketer')->get();
+        $shipments = $query->paginate(25)->withQueryString();
+
+        // Eager-load all logs for the paginated shipments (with user & disposition)
+        $shipmentIds = $shipments->pluck('id');
+        $allLogs = \App\Models\TelemarketingLog::with(['user', 'disposition'])
+            ->whereIn('shipment_id', $shipmentIds)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy('shipment_id');
+
+        // Platform Admin: get telemarketers from all companies
+        if ($companyId) {
+            $telemarketers = User::forCompany($companyId)->active()->role('Telemarketer')->get();
+        } else {
+            $telemarketers = User::active()->role('Telemarketer')->get();
+        }
+
         $dispositions = $this->telemarketingService->getDispositions($companyId);
 
-        return view('telemarketing.call-logs', compact('logs', 'telemarketers', 'dispositions'));
+        return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions'));
     }
 
     // ────────────────────────────────────────────────────────────────
     //  HELPERS
     // ────────────────────────────────────────────────────────────────
 
+    /**
+     * API endpoint for polling call history (auto-refresh).
+     */
+    public function callHistoryApi(Shipment $shipment)
+    {
+        $user = auth()->user();
+        if ($shipment->company_id !== $user->company_id) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+
+        $logs = $this->telemarketingService->getCallHistory($shipment->id);
+
+        $html = '';
+        foreach ($logs as $i => $log) {
+            $isDraft = $log->status === 'draft';
+            $borderClass = $isDraft ? 'border-amber-300 bg-amber-50' : ($i === 0 ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200');
+            $dispName = $isDraft ? 'Pending Disposition' : e($log->disposition?->name ?? 'N/A');
+            $dispColor = $isDraft ? 'amber' : ($log->disposition?->color ?? 'gray');
+            $userName = e($log->user?->name ?? 'N/A');
+            $phone = e($log->phone_called ?? '-');
+            $date = $log->created_at->format('M d, Y H:i');
+            $duration = $log->call_duration_seconds ? ' | Duration: ' . gmdate('i:s', $log->call_duration_seconds) : '';
+            $notes = $log->notes ? '<p class="text-sm text-gray-700 mt-1">' . e($log->notes) . '</p>' : '';
+            $callback = $log->callback_at ? '<p class="text-xs text-orange-600 mt-1">Callback: ' . $log->callback_at->format('M d, Y H:i') . '</p>' : '';
+
+            $html .= '<div class="border rounded-lg p-3 ' . $borderClass . '">';
+            if ($isDraft) {
+                $html .= '<div class="flex items-center space-x-1 mb-2"><span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Pending Disposition</span></div>';
+            }
+            $html .= '<div class="flex justify-between items-start mb-1">';
+            $html .= '<div class="flex items-center space-x-2">';
+            $html .= '<span class="text-sm font-semibold text-gray-900">Attempt #' . $log->attempt_no . '</span>';
+            $html .= '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-' . $dispColor . '-100 text-' . $dispColor . '-800">' . $dispName . '</span>';
+            $html .= '</div>';
+            $html .= '<span class="text-xs text-gray-500">' . $date . '</span>';
+            $html .= '</div>';
+            $html .= '<p class="text-xs text-gray-500">By: ' . $userName . ' | Phone: ' . $phone . $duration . '</p>';
+            $html .= $notes . $callback;
+            $html .= '</div>';
+        }
+
+        if (empty($html)) {
+            $html = '<p class="text-sm text-gray-500">No previous calls for this shipment.</p>';
+        }
+
+        // Find the most recent call today (draft or completed)
+        $calledToday = $logs->first(function ($log) {
+            return $log->created_at->isToday();
+        });
+        $bannerData = null;
+        if ($calledToday) {
+            $bannerData = [
+                'status' => $calledToday->status,
+                'time' => $calledToday->created_at->format('g:i A'),
+                'user' => $calledToday->user?->name ?? 'N/A',
+                'disposition' => $calledToday->disposition?->name ?? null,
+                'duration' => $calledToday->call_duration_seconds ? gmdate('i:s', $calledToday->call_duration_seconds) : null,
+            ];
+        }
+        return response()->json([
+            'count' => $logs->count(),
+            'html' => $html,
+            'calledToday' => $bannerData,
+        ]);
+    }
     protected function authorizeAssignment(Shipment $shipment): void
     {
         $user = auth()->user();
-
         if ($shipment->company_id !== $user->company_id) {
             abort(403);
         }
-
-        if ($user->hasRole('Telemarketer') && $shipment->assigned_to_user_id !== $user->id) {
-            abort(403, 'This shipment is not assigned to you.');
+        if ($user->hasRole('Telemarketer')) {
+            $settings = CompanyTelemarketingSetting::getOrCreate($user->company_id);
+            if ($settings->isPreAssigned() && $shipment->assigned_to_user_id !== $user->id) {
+                abort(403, 'This shipment is not assigned to you.');
+            }
+            // For shared_queue: any telemarketer in the company can access
+            // For hybrid: assigned to them OR unassigned
+            if ($settings->isHybrid() && $shipment->assigned_to_user_id !== null && $shipment->assigned_to_user_id !== $user->id) {
+                abort(403, 'This shipment is assigned to another agent.');
+            }
+            // Auto-assign on access for shared/hybrid if unassigned
+            if (!$settings->isPreAssigned() && $shipment->assigned_to_user_id === null) {
+                $shipment->update(['assigned_to_user_id' => $user->id]);
+            }
         }
     }
 }

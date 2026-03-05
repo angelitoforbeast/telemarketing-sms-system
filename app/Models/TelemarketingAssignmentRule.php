@@ -40,7 +40,7 @@ class TelemarketingAssignmentRule extends Model
         return $query->where('is_active', true);
     }
 
-    public function scopeForCompany($query, int $companyId)
+    public function scopeForCompany($query, ?int $companyId)
     {
         return $query->where('company_id', $companyId);
     }

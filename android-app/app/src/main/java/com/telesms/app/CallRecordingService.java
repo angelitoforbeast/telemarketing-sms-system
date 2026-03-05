@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
@@ -21,6 +22,9 @@ import java.io.File;
  * Foreground service that finds the latest call recording after a call ends
  * and uploads it to the server. Runs with a small delay to give the phone
  * time to finish writing the recording file.
+ *
+ * All file scanning and uploading runs on a dedicated background thread
+ * to avoid blocking the main/UI thread.
  */
 public class CallRecordingService extends Service {
 
@@ -33,13 +37,27 @@ public class CallRecordingService extends Service {
     private static final int MAX_RETRIES = 5;
     private static final long RETRY_DELAY_MS = 2000; // 2 seconds between retries
 
-    private Handler handler;
+    // Main thread handler — only for UI updates (notifications)
+    private Handler mainHandler;
+
+    // Background thread handler — for file scanning and uploading
+    private HandlerThread backgroundThread;
+    private Handler backgroundHandler;
+
     private RecordingUploader uploader;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        handler = new Handler(Looper.getMainLooper());
+
+        // Main thread handler for notification updates only
+        mainHandler = new Handler(Looper.getMainLooper());
+
+        // Dedicated background thread for file I/O (scanning + uploading)
+        backgroundThread = new HandlerThread("RecordingFinderThread");
+        backgroundThread.start();
+        backgroundHandler = new Handler(backgroundThread.getLooper());
+
         uploader = new RecordingUploader(this);
         createNotificationChannel();
     }
@@ -65,10 +83,10 @@ public class CallRecordingService extends Service {
             String shipmentId = intent.getStringExtra("shipment_id");
             String logId = intent.getStringExtra("log_id");
 
-            Log.i(TAG, "Will scan for recording in " + SCAN_DELAY_MS + "ms...");
+            Log.i(TAG, "Will scan for recording in " + SCAN_DELAY_MS + "ms (on background thread)...");
 
-            // Delay to let the phone finish writing the recording file
-            handler.postDelayed(() -> {
+            // Delay on background thread — no main thread blocking at all
+            backgroundHandler.postDelayed(() -> {
                 findAndUploadWithRetry(callStartTime, phoneNumber, shipmentId,
                         logId, callDuration, 0);
             }, SCAN_DELAY_MS);
@@ -79,66 +97,69 @@ public class CallRecordingService extends Service {
         return START_NOT_STICKY;
     }
 
+    /**
+     * Find recording and upload — runs entirely on background thread.
+     * Retries up to MAX_RETRIES times with RETRY_DELAY_MS between attempts.
+     */
     private void findAndUploadWithRetry(long callStartTime, String phoneNumber,
                                          String shipmentId, String logId,
                                          int callDuration, int attempt) {
         Log.i(TAG, "Scanning for recording (attempt " + (attempt + 1) + "/" + MAX_RETRIES + ")...");
 
-        File recording = RecordingFinder.findLatestRecording(callStartTime, phoneNumber);
+        // Pass context so RecordingFinder can cache the successful directory
+        File recording = RecordingFinder.findLatestRecording(callStartTime, phoneNumber, this);
 
         if (recording != null && recording.exists()) {
             Log.i(TAG, "Found recording: " + recording.getAbsolutePath());
 
-            // Update notification
-            updateNotification("Uploading recording...");
+            // Update notification on main thread
+            mainHandler.post(() -> updateNotification("Uploading recording..."));
 
-            // Upload in background thread
-            new Thread(() -> {
-                SharedPreferences prefs = getSharedPreferences("telesms_call", MODE_PRIVATE);
-                String authCookie = prefs.getString("auth_cookie", "");
+            // Upload (already on background thread, no need for new Thread)
+            SharedPreferences prefs = getSharedPreferences("telesms_call", MODE_PRIVATE);
+            String authCookie = prefs.getString("auth_cookie", "");
 
-                boolean success = uploader.upload(recording, shipmentId, logId,
-                        phoneNumber, callDuration, authCookie);
+            boolean success = uploader.upload(recording, shipmentId, logId,
+                    phoneNumber, callDuration, authCookie);
 
-                if (success) {
-                    Log.i(TAG, "Recording uploaded successfully!");
-                    updateNotification("Recording uploaded ✓");
+            if (success) {
+                Log.i(TAG, "Recording uploaded successfully!");
+                mainHandler.post(() -> updateNotification("Recording uploaded ✓"));
 
-                    // Store result for the WebView to pick up
-                    prefs.edit()
-                            .putBoolean("pending_recording_upload", false)
-                            .putString("last_recording_path", recording.getAbsolutePath())
-                            .putBoolean("last_upload_success", true)
-                            .apply();
-                } else {
-                    Log.e(TAG, "Recording upload failed");
-                    updateNotification("Upload failed — will retry later");
+                // Store result for the WebView to pick up
+                prefs.edit()
+                        .putBoolean("pending_recording_upload", false)
+                        .putString("last_recording_path", recording.getAbsolutePath())
+                        .putBoolean("last_upload_success", true)
+                        .apply();
+            } else {
+                Log.e(TAG, "Recording upload failed");
+                mainHandler.post(() -> updateNotification("Upload failed — will retry later"));
 
-                    // Store for retry
-                    prefs.edit()
-                            .putString("pending_upload_path", recording.getAbsolutePath())
-                            .putString("pending_upload_shipment_id", shipmentId)
-                            .putString("pending_upload_log_id", logId)
-                            .putString("pending_upload_phone", phoneNumber)
-                            .putInt("pending_upload_duration", callDuration)
-                            .apply();
-                }
+                // Store for retry
+                prefs.edit()
+                        .putString("pending_upload_path", recording.getAbsolutePath())
+                        .putString("pending_upload_shipment_id", shipmentId)
+                        .putString("pending_upload_log_id", logId)
+                        .putString("pending_upload_phone", phoneNumber)
+                        .putInt("pending_upload_duration", callDuration)
+                        .apply();
+            }
 
-                // Stop service after a short delay
-                handler.postDelayed(this::stopSelf, 2000);
-            }).start();
+            // Stop service after a short delay
+            mainHandler.postDelayed(this::stopSelf, 2000);
 
         } else if (attempt < MAX_RETRIES - 1) {
-            // Retry — recording might not be saved yet
+            // Retry on background thread — recording might not be saved yet
             Log.d(TAG, "No recording found yet, retrying in " + RETRY_DELAY_MS + "ms...");
-            handler.postDelayed(() -> {
+            backgroundHandler.postDelayed(() -> {
                 findAndUploadWithRetry(callStartTime, phoneNumber, shipmentId,
                         logId, callDuration, attempt + 1);
             }, RETRY_DELAY_MS);
 
         } else {
             Log.w(TAG, "No recording found after " + MAX_RETRIES + " attempts");
-            updateNotification("No recording found");
+            mainHandler.post(() -> updateNotification("No recording found"));
 
             SharedPreferences prefs = getSharedPreferences("telesms_call", MODE_PRIVATE);
             prefs.edit()
@@ -147,7 +168,7 @@ public class CallRecordingService extends Service {
                     .putString("last_recording_path", "")
                     .apply();
 
-            handler.postDelayed(this::stopSelf, 2000);
+            mainHandler.postDelayed(this::stopSelf, 2000);
         }
     }
 
@@ -177,6 +198,15 @@ public class CallRecordingService extends Service {
             if (manager != null) {
                 manager.createNotificationChannel(channel);
             }
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        // Clean up the background thread
+        if (backgroundThread != null) {
+            backgroundThread.quitSafely();
         }
     }
 

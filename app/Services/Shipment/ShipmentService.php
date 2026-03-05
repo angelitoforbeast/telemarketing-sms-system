@@ -61,6 +61,28 @@ class ShipmentService
             });
         }
 
+        // Shop Name (sender_name) filter — supports array (multi-select)
+        if (!empty($filters['sender_name'])) {
+            $senderNames = is_array($filters['sender_name']) ? $filters['sender_name'] : [$filters['sender_name']];
+            $senderNames = array_filter($senderNames); // remove empty values
+            if (!empty($senderNames)) {
+                $query->whereIn('sender_name', $senderNames);
+            }
+        }
+
+        // Item Name (item_description) filter — supports array (multi-select)
+        if (!empty($filters['item_description'])) {
+            $itemDescs = is_array($filters['item_description']) ? $filters['item_description'] : [$filters['item_description']];
+            $itemDescs = array_filter($itemDescs); // remove empty values
+            if (!empty($itemDescs)) {
+                $query->where(function ($q) use ($itemDescs) {
+                    foreach ($itemDescs as $desc) {
+                        $q->orWhere('item_description', 'like', '%' . $desc . '%');
+                    }
+                });
+            }
+        }
+
         // Date range filter
         if (!empty($filters['date_from'])) {
             $query->where('created_at', '>=', $filters['date_from']);

@@ -9,10 +9,18 @@ class TelemarketingDisposition extends Model
 {
     use HasFactory;
 
+    public const CATEGORY_LABELS = [
+        'answered'    => 'Answered',
+        'not_reached' => 'Not Reached',
+        'invalid'     => 'Invalid Number',
+        'other'       => 'Other',
+    ];
+
     protected $fillable = [
         'company_id',
         'name',
         'code',
+        'category',
         'is_final',
         'is_system',
         'sort_order',

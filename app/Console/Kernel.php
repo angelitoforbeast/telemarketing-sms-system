@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         // Evaluate SMS campaigns and queue messages every 15 minutes
-        $schedule->job(new \App\Jobs\EvaluateSmsCampaignsJob)->everyFifteenMinutes();
+        $schedule->job(new \App\Jobs\EvaluateSmsCampaignsJob)->everyMinute();
 
         // Process queued SMS messages every 5 minutes
         $schedule->job(new \App\Jobs\SendQueuedSmsJob(100))->everyFiveMinutes();

@@ -17,6 +17,11 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+
+        // Redirect SMS Operators to their blast dashboard
+        if ($user->hasRole("SMS Operator")) {
+            return redirect()->route("sms.blast.dashboard");
+        }
         $companyId = $user->company_id;
         $timezone = 'Asia/Manila';
 
