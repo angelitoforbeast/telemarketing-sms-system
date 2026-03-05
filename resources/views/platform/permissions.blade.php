@@ -1,4 +1,5 @@
 <x-app-layout>
+    <x-slot name="title">Global Role Permissions</x-slot>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">Global Role Permissions</h2>
     </x-slot>

@@ -1,4 +1,5 @@
 <x-app-layout>
+    <x-slot name="title">Import Details</x-slot>
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Import #{{ $importJob->id }}</h2>

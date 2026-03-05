@@ -1,4 +1,5 @@
 <x-app-layout>
+    <x-slot name="title">Settings</x-slot>
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">Company Settings</h2>
     </x-slot>
@@ -105,7 +106,7 @@
                         <h3 class="text-lg font-semibold text-gray-800">Role Permissions</h3>
                         <p class="text-sm text-gray-500 mt-1">Manage what each role can view, access, and edit in your company.</p>
                     </div>
-                    <a href="{{ route('settings.role-permissions') }}" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-md hover:bg-emerald-700 transition">
+                    <a href="{{ route('settings.role-permissions') }}" class="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-md transition" style="background-color: #059669;">
                         Manage &rarr;
                     </a>
                 </div>

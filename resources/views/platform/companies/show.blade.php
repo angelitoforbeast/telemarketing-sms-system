@@ -1,4 +1,5 @@
 <x-app-layout>
+    <x-slot name="title">Company Details</x-slot>
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Company: {{ $company->name }}</h2>
