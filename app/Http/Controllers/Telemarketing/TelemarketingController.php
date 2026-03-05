@@ -781,7 +781,12 @@ class TelemarketingController extends Controller
         $result = $service->analyze($log);
 
         if ($request->expectsJson()) {
-            return response()->json($result);
+            $html = '';
+            if ($result['success']) {
+                $log->refresh();
+                $html = view('telemarketing.partials.ai-result', ['log' => $log])->render();
+            }
+            return response()->json(array_merge($result, ['html' => $html]));
         }
 
         if ($result['success']) {

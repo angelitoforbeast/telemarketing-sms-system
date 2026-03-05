@@ -115,6 +115,7 @@ class CallAnalysisService
                 ['name' => 'model', 'contents' => 'whisper-1'],
                 ['name' => 'language', 'contents' => 'tl'],
                 ['name' => 'response_format', 'contents' => 'verbose_json'],
+                ['name' => 'prompt', 'contents' => 'Hello po, magandang hapon po. Ito po si Agent calling from the company. Kumusta po kayo? This is a telemarketing phone call in Filipino/Tagalog. Transcribe everything from the very beginning including greetings and introductions.'],
             ]);
 
         if (!$response->successful()) {
