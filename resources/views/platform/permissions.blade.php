@@ -1,5 +1,58 @@
 <x-app-layout>
     <x-slot name="title">Global Role Permissions</x-slot>
+
+    @php
+    $permLabels = [
+        // SMS
+        'sms.devices.view' => 'View SMS Devices',
+        'sms.devices.manage' => 'Manage SMS Devices',
+        'sms.blast.send' => 'Send SMS Blast',
+        'sms.campaigns.view' => 'View Campaigns',
+        'sms.campaigns.create' => 'Create Campaigns',
+        'sms.campaigns.edit' => 'Edit Campaigns',
+        'sms.campaigns.toggle' => 'Toggle Campaigns',
+        'sms.logs.view' => 'View SMS Logs',
+        // Import
+        'import.upload' => 'Upload Imports',
+        'import.view' => 'View Import History',
+        // Shipments
+        'shipments.view' => 'View Shipments',
+        'shipments.assign' => 'Assign Shipments',
+        'shipments.auto-assign' => 'Auto-Assign Shipments',
+        // Telemarketing
+        'telemarketing.view-queue' => 'View Call Queue',
+        'telemarketing.log-call' => 'Log Calls',
+        'telemarketing.view-all-logs' => 'View All Call Logs',
+        // Users
+        'users.view' => 'View Users',
+        'users.create' => 'Create Users',
+        'users.edit' => 'Edit Users',
+        'users.toggle' => 'Activate/Deactivate Users',
+        // Dashboard
+        'dashboard.view' => 'View Dashboard',
+        'dashboard.reports' => 'View Reports',
+        // Remittance
+        'remittance.view' => 'View Remittance',
+        // Settings
+        'settings.manage' => 'Manage Settings',
+        // Platform
+        'platform.manage-all-users' => 'Manage All Users',
+        'platform.manage-companies' => 'Manage Companies',
+        'platform.view-global-stats' => 'View Global Statistics',
+    ];
+
+    $moduleLabels = [
+        'Sms' => 'SMS',
+        'Import' => 'Import',
+        'Shipments' => 'Shipments',
+        'Telemarketing' => 'Telemarketing',
+        'Users' => 'Users',
+        'Dashboard' => 'Dashboard',
+        'Remittance' => 'Remittance',
+        'Settings' => 'Settings',
+        'Platform' => 'Platform',
+    ];
+    @endphp
     <x-slot name="header">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">Global Role Permissions</h2>
     </x-slot>
@@ -53,7 +106,7 @@
                                     <tr class="bg-indigo-50">
                                         <td colspan="{{ count($roles) + 1 }}" class="px-4 py-2">
                                             <div class="flex items-center">
-                                                <span class="text-sm font-bold text-indigo-700">{{ $module }}</span>
+                                                <span class="text-sm font-bold text-indigo-700">{{ $moduleLabels[$module] ?? $module }}</span>
                                                 <span class="ml-2 text-xs text-indigo-500">({{ count($perms) }} permissions)</span>
                                             </div>
                                         </td>
@@ -61,9 +114,9 @@
                                     @foreach($perms as $perm)
                                         <tr class="hover:bg-gray-50 transition-colors">
                                             <td class="px-4 py-2.5 text-sm text-gray-700 sticky left-0 bg-white z-10">
-                                                <code class="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                                    {{ $perm->name }}
-                                                </code>
+                                                <span class="text-sm text-gray-800">
+                                                    {{ $permLabels[$perm->name] ?? $perm->name }}
+                                                </span>
                                             </td>
                                             @foreach($roles as $role)
                                                 @php
