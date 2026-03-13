@@ -7,7 +7,7 @@
         </div>
     </x-slot>
 
-    <div class="py-6">
+    <div class="py-6" x-data="callLogColumns()">
         <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
 
             {{-- Stats Cards --}}
@@ -78,13 +78,64 @@
                         <a href="{{ route('telemarketing.call-logs') }}" class="px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 transition">Reset</a>
                     </form>
 
-                    {{-- Analyze All Button (CEO/Owner only) --}}
-                    @if(auth()->user()->hasRole('Company Owner') || auth()->user()->hasRole('CEO') || auth()->user()->hasRole('Platform Admin'))
-                        <button onclick="analyzeAllUnanalyzed()" id="analyze-all-btn" class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 transition flex items-center gap-2 whitespace-nowrap">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-                            Analyze All Unanalyzed (<span id="unanalyzed-count">{{ $totalUnanalyzed }}</span>)
-                        </button>
-                    @endif
+                    <div class="flex items-center gap-2">
+                        {{-- Column Settings Gear (CEO/Owner only) --}}
+                        @if(auth()->user()->hasRole('Company Owner') || auth()->user()->hasRole('CEO') || auth()->user()->hasRole('Platform Admin'))
+                            <div class="relative">
+                                <button @click="showPanel = !showPanel" class="p-2 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition" title="Column Settings">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                </button>
+
+                                {{-- Column Settings Panel --}}
+                                <div x-show="showPanel" @click.away="showPanel = false" x-transition
+                                     class="absolute right-0 top-full mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <h3 class="text-sm font-semibold text-gray-800">Column Settings</h3>
+                                        <button @click="showPanel = false" class="text-gray-400 hover:text-gray-600">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-400 mb-3">Toggle visibility and drag to reorder</p>
+
+                                    <div id="column-sortable-list">
+                                        <template x-for="(col, index) in columns" :key="col.key">
+                                            <div class="flex items-center gap-2 py-1.5 px-2 mb-1 bg-gray-50 rounded cursor-grab hover:bg-gray-100 transition"
+                                                 draggable="true"
+                                                 @dragstart="dragStart(index, $event)"
+                                                 @dragover.prevent="dragOver(index, $event)"
+                                                 @dragend="dragEnd()"
+                                                 :class="{ 'opacity-50': draggingIndex === index, 'border-t-2 border-indigo-400': dropTarget === index }">
+                                                <svg class="w-4 h-4 text-gray-300 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                                                </svg>
+                                                <label class="flex items-center gap-2 flex-1 cursor-pointer select-none">
+                                                    <input type="checkbox" x-model="col.visible"
+                                                           class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                                           :disabled="col.key === 'expand' || col.key === 'actions'">
+                                                    <span class="text-xs font-medium text-gray-700" x-text="col.label"></span>
+                                                </label>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                                        <button @click="saveColumns()" class="flex-1 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-md hover:bg-indigo-700 transition"
+                                                :disabled="saving" x-text="saving ? 'Saving...' : 'Save Settings'"></button>
+                                        <button @click="resetColumns()" class="px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded-md hover:bg-gray-300 transition">Reset</button>
+                                    </div>
+                                    <div x-show="saveSuccess" x-transition class="mt-2 text-xs text-green-600 text-center font-medium">Settings saved! Reloading...</div>
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- Analyze All Button (CEO/Owner only) --}}
+                        @if(auth()->user()->hasRole('Company Owner') || auth()->user()->hasRole('CEO') || auth()->user()->hasRole('Platform Admin'))
+                            <button onclick="analyzeAllUnanalyzed()" id="analyze-all-btn" class="px-4 py-2 bg-purple-600 text-white text-sm rounded-md hover:bg-purple-700 transition flex items-center gap-2 whitespace-nowrap">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                                Analyze All Unanalyzed (<span id="unanalyzed-count">{{ $totalUnanalyzed }}</span>)
+                            </button>
+                        @endif
+                    </div>
                 </div>
             </div>
 
@@ -94,18 +145,15 @@
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"></th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waybill</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COD</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Disposition</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AI Summary</th>
-                                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Sentiment</th>
-                                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Intent</th>
-                                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
-                                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issues</th>
-                                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Calls</th>
-                                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                <template x-for="col in visibleColumns" :key="col.key">
+                                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                                        :class="{
+                                            'w-8': col.key === 'expand',
+                                            'text-right': col.key === 'cod',
+                                            'text-center': ['sentiment','intent','score','calls','actions'].includes(col.key)
+                                        }"
+                                        x-text="col.key === 'expand' ? '' : col.label"></th>
+                                </template>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
@@ -120,26 +168,26 @@
                                 {{-- Main Row --}}
                                 <tr class="hover:bg-gray-50 cursor-pointer transition" onclick="toggleExpand('expand-{{ $shipment->id }}', this)">
                                     {{-- Expand Arrow --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('expand')" class="px-3 py-3">
                                         <svg class="w-4 h-4 text-gray-400 transform transition-transform expand-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                         </svg>
                                     </td>
                                     {{-- Waybill --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('waybill')" class="px-3 py-3">
                                         <a href="{{ route('telemarketing.call', $shipment) }}" class="text-sm font-mono font-semibold text-indigo-600 hover:text-indigo-900" onclick="event.stopPropagation()">{{ $shipment->waybill_no }}</a>
                                     </td>
                                     {{-- Customer --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('customer')" class="px-3 py-3">
                                         <p class="text-sm font-medium text-gray-900 truncate max-w-[140px]">{{ $shipment->consignee_name }}</p>
                                         <p class="text-xs text-gray-500 font-mono">{{ $shipment->consignee_phone_1 }}</p>
                                     </td>
                                     {{-- COD --}}
-                                    <td class="px-3 py-3 text-right">
-                                        <span class="text-sm font-semibold text-gray-900">₱{{ number_format($shipment->cod_amount, 2) }}</span>
+                                    <td x-show="isVisible('cod')" class="px-3 py-3 text-right">
+                                        <span class="text-sm font-semibold text-gray-900">&#8369;{{ number_format($shipment->cod_amount, 2) }}</span>
                                     </td>
                                     {{-- Disposition --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('disposition')" class="px-3 py-3">
                                         @if($shipment->lastDisposition)
                                             <x-badge :color="$shipment->lastDisposition->color ?? 'gray'">{{ $shipment->lastDisposition->name }}</x-badge>
                                         @elseif($hasInProgress)
@@ -152,7 +200,7 @@
                                         @endif
                                     </td>
                                     {{-- AI Summary --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('summary')" class="px-3 py-3">
                                         @if($analyzedLog && $analyzedLog->ai_summary)
                                             <p class="text-xs text-gray-600 truncate max-w-[200px]" title="{{ $analyzedLog->ai_summary }}">{{ $analyzedLog->ai_summary }}</p>
                                         @else
@@ -160,7 +208,7 @@
                                         @endif
                                     </td>
                                     {{-- Sentiment --}}
-                                    <td class="px-3 py-3 text-center">
+                                    <td x-show="isVisible('sentiment')" class="px-3 py-3 text-center">
                                         @if($analyzedLog && $analyzedLog->ai_sentiment)
                                             @php
                                                 $sentimentColors = [
@@ -182,7 +230,7 @@
                                         @endif
                                     </td>
                                     {{-- Customer Intent --}}
-                                    <td class="px-3 py-3 text-center">
+                                    <td x-show="isVisible('intent')" class="px-3 py-3 text-center">
                                         @if($analyzedLog && $analyzedLog->ai_customer_intent)
                                             @php
                                                 $intentColors = [
@@ -203,7 +251,7 @@
                                         @endif
                                     </td>
                                     {{-- Agent Score --}}
-                                    <td class="px-3 py-3 text-center">
+                                    <td x-show="isVisible('score')" class="px-3 py-3 text-center">
                                         @if($analyzedLog && $analyzedLog->ai_agent_score)
                                             @php
                                                 $score = $analyzedLog->ai_agent_score;
@@ -218,7 +266,7 @@
                                         @endif
                                     </td>
                                     {{-- Key Issues --}}
-                                    <td class="px-3 py-3">
+                                    <td x-show="isVisible('issues')" class="px-3 py-3">
                                         @if($analyzedLog && $analyzedLog->ai_key_issues && strtolower($analyzedLog->ai_key_issues) !== 'none')
                                             <p class="text-xs text-orange-600 truncate max-w-[150px]" title="{{ $analyzedLog->ai_key_issues }}">{{ $analyzedLog->ai_key_issues }}</p>
                                         @else
@@ -226,7 +274,7 @@
                                         @endif
                                     </td>
                                     {{-- Calls Count --}}
-                                    <td class="px-3 py-3 text-center">
+                                    <td x-show="isVisible('calls')" class="px-3 py-3 text-center">
                                         <div class="flex items-center justify-center gap-1">
                                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">{{ $logs->count() }}</span>
                                             @if($recordingCount > 0)
@@ -238,7 +286,7 @@
                                         </div>
                                     </td>
                                     {{-- Actions --}}
-                                    <td class="px-3 py-3 text-center">
+                                    <td x-show="isVisible('actions')" class="px-3 py-3 text-center">
                                         @if($latestLog && $latestLog->hasRecording())
                                             <div class="flex items-center justify-center gap-1">
                                                 <button onclick="event.stopPropagation(); toggleAudio(this, '{{ $latestLog->getRecordingPlaybackUrl() }}')" class="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition" title="Play">
@@ -258,21 +306,19 @@
 
                                 {{-- Expandable Row: Call Attempts + Transcriptions --}}
                                 <tr id="expand-{{ $shipment->id }}" class="hidden">
-                                    <td colspan="12" class="p-0">
+                                    <td :colspan="visibleColumns.length" class="p-0">
                                         <div class="bg-gray-50 border-t border-b border-gray-200">
                                             @foreach($logs as $log)
                                                 <div class="border-b border-gray-100 last:border-b-0">
                                                     {{-- Call Attempt Header --}}
                                                     <div class="px-5 py-2.5 flex items-center justify-between {{ $log->status === 'draft' ? 'bg-yellow-50' : 'bg-white' }}">
-                                                        <div class="flex items-center gap-4 text-sm">
+                                                        <div class="flex items-center gap-4 text-sm flex-wrap">
                                                             <span class="font-semibold text-gray-400 w-6">#{{ $log->attempt_no ?? '-' }}</span>
                                                             <span class="text-gray-500 text-xs">{{ $log->created_at->format('M d, Y H:i') }}</span>
                                                             <span class="font-medium text-gray-700">{{ $log->user?->name ?? '-' }}</span>
                                                             <span class="font-mono text-gray-500 text-xs">{{ $log->phone_called ?? '-' }}</span>
                                                             @if($log->disposition)
                                                                 <x-badge :color="$log->disposition->color ?? 'gray'">{{ $log->disposition->name }}</x-badge>
-                                                            @elseif($log->status === 'draft')
-                                                                <span class="text-yellow-600 text-xs italic">Pending...</span>
                                                             @endif
                                                             @if($log->ai_disposition_id && $log->disposition)
                                                                 @php $match = ($log->aiDisposition && $log->aiDisposition->id === $log->disposition->id); @endphp
@@ -306,43 +352,35 @@
                                                     @if($log->ai_analyzed_at)
                                                         <div class="px-5 py-2 bg-indigo-50/50 border-t border-indigo-100">
                                                             <div class="flex flex-wrap items-start gap-4 text-xs">
-                                                                {{-- Summary --}}
                                                                 <div class="flex-1 min-w-[200px]">
                                                                     <span class="font-semibold text-indigo-600">Summary:</span>
                                                                     <span class="text-gray-700">{{ $log->ai_summary }}</span>
                                                                 </div>
-                                                                {{-- Sentiment --}}
                                                                 @if($log->ai_sentiment)
                                                                     <div>
                                                                         <span class="font-semibold text-gray-500">Sentiment:</span>
-                                                                        @php
-                                                                            $sc = ['positive' => 'text-green-600', 'neutral' => 'text-gray-600', 'negative' => 'text-red-600'];
-                                                                        @endphp
+                                                                        @php $sc = ['positive' => 'text-green-600', 'neutral' => 'text-gray-600', 'negative' => 'text-red-600']; @endphp
                                                                         <span class="font-medium {{ $sc[$log->ai_sentiment] ?? 'text-gray-600' }}">{{ ucfirst($log->ai_sentiment) }}</span>
                                                                     </div>
                                                                 @endif
-                                                                {{-- Intent --}}
                                                                 @if($log->ai_customer_intent)
                                                                     <div>
                                                                         <span class="font-semibold text-gray-500">Intent:</span>
                                                                         <span class="text-gray-700">{{ ucfirst($log->ai_customer_intent) }}</span>
                                                                     </div>
                                                                 @endif
-                                                                {{-- Score --}}
                                                                 @if($log->ai_agent_score)
                                                                     <div>
                                                                         <span class="font-semibold text-gray-500">Score:</span>
                                                                         <span class="font-bold {{ $log->ai_agent_score >= 8 ? 'text-green-600' : ($log->ai_agent_score >= 5 ? 'text-yellow-600' : 'text-red-600') }}">{{ $log->ai_agent_score }}/10</span>
                                                                     </div>
                                                                 @endif
-                                                                {{-- Key Issues --}}
                                                                 @if($log->ai_key_issues && strtolower($log->ai_key_issues) !== 'none')
                                                                     <div>
                                                                         <span class="font-semibold text-orange-500">Issues:</span>
                                                                         <span class="text-gray-700">{{ $log->ai_key_issues }}</span>
                                                                     </div>
                                                                 @endif
-                                                                {{-- Action Items --}}
                                                                 @if($log->ai_action_items && strtolower($log->ai_action_items) !== 'none')
                                                                     <div>
                                                                         <span class="font-semibold text-blue-500">Action:</span>
@@ -382,8 +420,9 @@
 
                                                     {{-- Notes --}}
                                                     @if($log->notes)
-                                                        <div class="px-5 py-1.5 bg-gray-50 border-t border-gray-100">
-                                                            <p class="text-xs text-gray-500"><span class="font-medium text-gray-600">Notes:</span> {{ $log->notes }}</p>
+                                                        <div class="px-5 py-1.5 bg-yellow-50/50 border-t border-yellow-100">
+                                                            <span class="text-xs font-semibold text-yellow-600">Notes:</span>
+                                                            <span class="text-xs text-gray-600">{{ $log->notes }}</span>
                                                         </div>
                                                     @endif
                                                 </div>
@@ -393,7 +432,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="12" class="px-6 py-8 text-center text-sm text-gray-500">No call logs found.</td>
+                                    <td :colspan="visibleColumns.length" class="px-6 py-8 text-center text-sm text-gray-500">No call logs found.</td>
                                 </tr>
                             @endforelse
                         </tbody>
@@ -451,6 +490,139 @@
 
     @push('scripts')
     <script>
+        function callLogColumns() {
+            const defaultColumns = [
+                { key: 'expand', label: '', visible: true, order: 0 },
+                { key: 'waybill', label: 'Waybill', visible: true, order: 1 },
+                { key: 'customer', label: 'Customer', visible: true, order: 2 },
+                { key: 'cod', label: 'COD', visible: true, order: 3 },
+                { key: 'disposition', label: 'Disposition', visible: true, order: 4 },
+                { key: 'summary', label: 'AI Summary', visible: true, order: 5 },
+                { key: 'sentiment', label: 'Sentiment', visible: true, order: 6 },
+                { key: 'intent', label: 'Intent', visible: true, order: 7 },
+                { key: 'score', label: 'Score', visible: true, order: 8 },
+                { key: 'issues', label: 'Issues', visible: true, order: 9 },
+                { key: 'calls', label: 'Calls', visible: true, order: 10 },
+                { key: 'actions', label: 'Actions', visible: true, order: 11 },
+            ];
+
+            // Load saved config from server
+            const savedConfig = @json($columnConfig ?? null);
+            let columns = defaultColumns;
+
+            if (savedConfig && Array.isArray(savedConfig) && savedConfig.length > 0) {
+                // Merge saved config with defaults (in case new columns were added)
+                const savedMap = {};
+                savedConfig.forEach(c => { savedMap[c.key] = c; });
+
+                columns = [];
+                // First add saved columns in their order
+                savedConfig.forEach(sc => {
+                    const def = defaultColumns.find(d => d.key === sc.key);
+                    if (def) {
+                        columns.push({ ...def, visible: sc.visible, order: sc.order });
+                    }
+                });
+                // Then add any new default columns not in saved config
+                defaultColumns.forEach(dc => {
+                    if (!savedMap[dc.key]) {
+                        columns.push({ ...dc, order: columns.length });
+                    }
+                });
+
+                columns.sort((a, b) => a.order - b.order);
+            }
+
+            return {
+                columns: columns,
+                showPanel: false,
+                saving: false,
+                saveSuccess: false,
+                draggingIndex: null,
+                dropTarget: null,
+
+                get visibleColumns() {
+                    return this.columns.filter(c => c.visible);
+                },
+
+                isVisible(key) {
+                    const col = this.columns.find(c => c.key === key);
+                    return col ? col.visible : true;
+                },
+
+                dragStart(index, event) {
+                    this.draggingIndex = index;
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', index);
+                },
+
+                dragOver(index, event) {
+                    if (this.draggingIndex === null || this.draggingIndex === index) {
+                        this.dropTarget = null;
+                        return;
+                    }
+                    this.dropTarget = index;
+                },
+
+                dragEnd() {
+                    if (this.draggingIndex !== null && this.dropTarget !== null && this.draggingIndex !== this.dropTarget) {
+                        const item = this.columns.splice(this.draggingIndex, 1)[0];
+                        this.columns.splice(this.dropTarget, 0, item);
+                        // Update order values
+                        this.columns.forEach((c, i) => c.order = i);
+                    }
+                    this.draggingIndex = null;
+                    this.dropTarget = null;
+                },
+
+                saveColumns() {
+                    this.saving = true;
+                    this.saveSuccess = false;
+
+                    fetch('{{ route("api.call-log-columns.save") }}', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ columns: this.columns }),
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        this.saving = false;
+                        if (data.success) {
+                            this.saveSuccess = true;
+                            setTimeout(() => window.location.reload(), 800);
+                        } else {
+                            alert('Failed to save: ' + (data.message || 'Unknown error'));
+                        }
+                    })
+                    .catch(() => {
+                        this.saving = false;
+                        alert('Network error. Please try again.');
+                    });
+                },
+
+                resetColumns() {
+                    this.columns = [
+                        { key: 'expand', label: '', visible: true, order: 0 },
+                        { key: 'waybill', label: 'Waybill', visible: true, order: 1 },
+                        { key: 'customer', label: 'Customer', visible: true, order: 2 },
+                        { key: 'cod', label: 'COD', visible: true, order: 3 },
+                        { key: 'disposition', label: 'Disposition', visible: true, order: 4 },
+                        { key: 'summary', label: 'AI Summary', visible: true, order: 5 },
+                        { key: 'sentiment', label: 'Sentiment', visible: true, order: 6 },
+                        { key: 'intent', label: 'Intent', visible: true, order: 7 },
+                        { key: 'score', label: 'Score', visible: true, order: 8 },
+                        { key: 'issues', label: 'Issues', visible: true, order: 9 },
+                        { key: 'calls', label: 'Calls', visible: true, order: 10 },
+                        { key: 'actions', label: 'Actions', visible: true, order: 11 },
+                    ];
+                },
+            };
+        }
+
         function toggleExpand(id, row) {
             const el = document.getElementById(id);
             const arrow = row.querySelector('.expand-arrow');
@@ -497,7 +669,6 @@
             .then(data => {
                 document.getElementById('ai-loading-modal').classList.add('hidden');
                 if (data.success) {
-                    // Reload page to show updated data
                     window.location.reload();
                 } else {
                     alert('Analysis failed: ' + (data.message || 'Unknown error'));

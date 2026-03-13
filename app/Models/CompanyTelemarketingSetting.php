@@ -16,6 +16,7 @@ class CompanyTelemarketingSetting extends Model
         'require_recording',
         'recording_upload_timeout',
         'recording_exempt_dispositions',
+        'call_log_columns',
     ];
     protected $casts = [
         'auto_call_enabled' => 'boolean',
@@ -23,6 +24,7 @@ class CompanyTelemarketingSetting extends Model
         'require_recording' => 'boolean',
         'recording_upload_timeout' => 'integer',
         'recording_exempt_dispositions' => 'array',
+        'call_log_columns' => 'array',
     ];
     public function company()
     {

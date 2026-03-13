@@ -763,7 +763,8 @@ class TelemarketingController extends Controller
 
         $dispositions = $this->telemarketingService->getDispositions($companyId);
 
-        return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions'));
+        $columnConfig = CompanyTelemarketingSetting::getOrCreate($companyId ?? 0)->call_log_columns;
+        return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions', 'columnConfig'));
     }
 
     // ────────────────────────────────────────────────────────────────
@@ -854,6 +855,30 @@ class TelemarketingController extends Controller
     }
 
     // ────────────────────────────────────────────────────────────────
+
+    public function saveCallLogColumns(Request $request)
+    {
+        $user = $request->user();
+
+        // Only CEO/Owner can change column settings
+        if (!$user->hasRole('CEO') && !$user->hasRole('Company Owner')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'columns' => 'required|array',
+            'columns.*.key' => 'required|string',
+            'columns.*.label' => 'nullable|string',
+            'columns.*.visible' => 'required|boolean',
+            'columns.*.order' => 'required|integer',
+        ]);
+
+        $settings = CompanyTelemarketingSetting::getOrCreate($user->company_id);
+        $settings->call_log_columns = $validated['columns'];
+        $settings->save();
+
+        return response()->json(['success' => true, 'message' => 'Column settings saved']);
+    }
     //  HELPERS
     // ────────────────────────────────────────────────────────────────
 
