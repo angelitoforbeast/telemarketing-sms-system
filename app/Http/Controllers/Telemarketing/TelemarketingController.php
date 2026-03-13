@@ -842,32 +842,53 @@ class TelemarketingController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
-        // Get all logs with recordings that need (re-)analysis (incomplete AI fields)
-        $query = TelemarketingLog::needsAnalysis();
+        // Build filtered query based on the same filters as the page view
+        $companyId = $user->company_id;
 
-        // Company users only see their own company's logs
-        if ($user->company_id) {
-            $query->whereHas('shipment', function ($q) use ($user) {
-                $q->where('company_id', $user->company_id);
-            });
+        // Start from shipments matching the current filters
+        $shipmentQuery = Shipment::whereHas('telemarketingLogs');
+
+        if ($companyId) {
+            $shipmentQuery->forCompany($companyId);
         }
 
-        $logs = $query->get();
+        // Apply the same filters as callLogs()
+        if ($request->filled('telemarketer_id')) {
+            $shipmentQuery->whereHas('telemarketingLogs', fn ($q) => $q->where('user_id', $request->telemarketer_id));
+        }
+        if ($request->filled('disposition_id')) {
+            $shipmentQuery->whereHas('telemarketingLogs', fn ($q) => $q->where('disposition_id', $request->disposition_id));
+        }
+        if ($request->filled('date_from')) {
+            $shipmentQuery->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '>=', $request->date_from));
+        }
+        if ($request->filled('date_to')) {
+            $shipmentQuery->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '<=', $request->date_to . ' 23:59:59'));
+        }
+        if ($request->filled('status') && $request->status !== 'all') {
+            $shipmentQuery->whereHas('telemarketingLogs', fn ($q) => $q->where('status', $request->status));
+        }
+
+        // Get the shipment IDs that match the current filter
+        $shipmentIds = $shipmentQuery->pluck('id');
+
+        // Get logs from those shipments that need analysis and have recordings
+        $logs = TelemarketingLog::needsAnalysis()
+            ->whereIn('shipment_id', $shipmentIds)
+            ->get();
+
         $count = $logs->count();
 
         if ($count === 0) {
-            return response()->json(['success' => true, 'queued' => 0, 'message' => 'No unanalyzed recordings found.']);
+            return response()->json(['success' => true, 'total' => 0, 'message' => 'No unanalyzed recordings found.']);
         }
 
-        // Dispatch each recording to the queue for background processing
-        foreach ($logs as $index => $log) {
-            AnalyzeCallRecording::dispatch($log->id)->delay(now()->addSeconds($index * 5));
-        }
-
+        // Return the log IDs so the frontend can process them one by one
         return response()->json([
             'success' => true,
-            'queued' => $count,
-            'message' => "Queued {$count} recordings for analysis. Results will appear automatically.",
+            'total' => $count,
+            'log_ids' => $logs->pluck('id')->values(),
+            'message' => "Found {$count} recordings to analyze.",
         ]);
     }
 

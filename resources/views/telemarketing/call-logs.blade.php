@@ -147,6 +147,24 @@
                 </div>
             </div>
 
+            {{-- Bulk Analysis Progress Bar --}}
+            <div id="analysis-progress" class="hidden bg-white shadow rounded-lg p-4 mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-purple-600 animate-spin" id="progress-spinner" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                        <span class="text-sm font-semibold text-gray-700" id="progress-title">Analyzing calls...</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-gray-500" id="progress-count">0 / 0</span>
+                        <button onclick="cancelBulkAnalysis()" id="cancel-analysis-btn" class="px-3 py-1 bg-red-100 text-red-700 text-xs rounded hover:bg-red-200 transition">Cancel</button>
+                    </div>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-3">
+                    <div id="progress-bar" class="bg-purple-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <div class="mt-2 text-xs text-gray-400" id="progress-detail">Preparing...</div>
+            </div>
+
             {{-- Call Logs Table --}}
             <div class="bg-white shadow rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
@@ -724,40 +742,137 @@
             analyzeCall(btn, logId);
         }
 
-        function analyzeAllUnanalyzed() {
+        let bulkAnalysisCancelled = false;
+
+        function cancelBulkAnalysis() {
+            bulkAnalysisCancelled = true;
+            document.getElementById('progress-title').textContent = 'Cancelling...';
+            document.getElementById('cancel-analysis-btn').disabled = true;
+        }
+
+        function getActiveFilters() {
+            const form = document.querySelector('form[action*="call-logs"]');
+            const params = new URLSearchParams(new FormData(form));
+            // Also check URL params as fallback
+            const urlParams = new URLSearchParams(window.location.search);
+            const filters = {};
+            ['status', 'telemarketer_id', 'disposition_id', 'date_from', 'date_to', 'recording'].forEach(key => {
+                const val = params.get(key) || urlParams.get(key);
+                if (val) filters[key] = val;
+            });
+            return filters;
+        }
+
+        async function analyzeAllUnanalyzed() {
             const count = document.getElementById('unanalyzed-count').textContent;
-            if (!confirm('Analyze all ' + count + ' unanalyzed recordings? This will queue them for background processing.')) return;
+            if (!confirm('Analyze all ' + count + ' unanalyzed recordings from the current filtered view?')) return;
 
             const btn = document.getElementById('analyze-all-btn');
             btn.disabled = true;
-            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Queueing...';
+            btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Preparing...';
 
-            fetch('/telemarketing/analyze-all-unanalyzed', {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                },
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg> ' + data.queued + ' queued';
-                    btn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
-                    btn.classList.add('bg-green-600');
-                    setTimeout(() => window.location.reload(), 2000);
-                } else {
-                    alert('Failed: ' + (data.message || 'Unknown error'));
+            bulkAnalysisCancelled = false;
+            const filters = getActiveFilters();
+
+            // Step 1: Get the list of log IDs to analyze (filtered)
+            try {
+                const response = await fetch('/telemarketing/analyze-all-unanalyzed', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(filters),
+                });
+                const data = await response.json();
+
+                if (!data.success || !data.log_ids || data.log_ids.length === 0) {
+                    alert(data.message || 'No recordings to analyze.');
                     btn.disabled = false;
-                    btn.innerHTML = 'Analyze All Unanalyzed (' + count + ')';
+                    btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg> Analyze All Unanalyzed (' + count + ')';
+                    return;
                 }
-            })
-            .catch(error => {
+
+                const logIds = data.log_ids;
+                const total = logIds.length;
+
+                // Show progress bar
+                const progressEl = document.getElementById('analysis-progress');
+                progressEl.classList.remove('hidden');
+                document.getElementById('progress-count').textContent = '0 / ' + total;
+                document.getElementById('progress-detail').textContent = 'Starting analysis...';
+                document.getElementById('progress-bar').style.width = '0%';
+
+                btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Analyzing...';
+
+                // Step 2: Process each log one by one
+                let completed = 0;
+                let failed = 0;
+
+                for (let i = 0; i < logIds.length; i++) {
+                    if (bulkAnalysisCancelled) break;
+
+                    const logId = logIds[i];
+                    document.getElementById('progress-detail').textContent = 'Analyzing call ' + (i + 1) + ' of ' + total + ' (ID: ' + logId + ')...';
+
+                    try {
+                        const res = await fetch('/telemarketing/analyze-call/' + logId, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                            },
+                        });
+                        const result = await res.json();
+                        if (result.success) {
+                            completed++;
+                        } else {
+                            failed++;
+                        }
+                    } catch (e) {
+                        failed++;
+                    }
+
+                    // Update progress
+                    const done = completed + failed;
+                    const pct = Math.round((done / total) * 100);
+                    document.getElementById('progress-bar').style.width = pct + '%';
+                    document.getElementById('progress-count').textContent = done + ' / ' + total;
+                    document.getElementById('unanalyzed-count').textContent = Math.max(0, parseInt(count) - completed);
+                }
+
+                // Done
+                const spinner = document.getElementById('progress-spinner');
+                spinner.classList.remove('animate-spin');
+                spinner.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>';
+                spinner.setAttribute('stroke', 'currentColor');
+                spinner.classList.remove('text-purple-600');
+                spinner.classList.add('text-green-600');
+
+                document.getElementById('cancel-analysis-btn').classList.add('hidden');
+
+                if (bulkAnalysisCancelled) {
+                    document.getElementById('progress-title').textContent = 'Analysis cancelled';
+                    document.getElementById('progress-detail').textContent = completed + ' completed, ' + failed + ' failed, ' + (total - completed - failed) + ' skipped';
+                    document.getElementById('progress-bar').classList.remove('bg-purple-600');
+                    document.getElementById('progress-bar').classList.add('bg-yellow-500');
+                } else {
+                    document.getElementById('progress-title').textContent = 'Analysis complete!';
+                    document.getElementById('progress-detail').textContent = completed + ' completed' + (failed > 0 ? ', ' + failed + ' failed' : '');
+                    document.getElementById('progress-bar').classList.remove('bg-purple-600');
+                    document.getElementById('progress-bar').classList.add('bg-green-500');
+                }
+
+                // Reload page after 2 seconds to show updated data
+                setTimeout(() => window.location.reload(), 2500);
+
+            } catch (error) {
                 alert('Network error. Please try again.');
                 btn.disabled = false;
-                btn.innerHTML = 'Analyze All Unanalyzed (' + count + ')';
-            });
+                btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg> Analyze All Unanalyzed (' + count + ')';
+            }
         }
 
         let currentPlayingBtn = null;
