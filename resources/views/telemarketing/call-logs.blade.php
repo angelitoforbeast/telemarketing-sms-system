@@ -764,7 +764,8 @@
         }
 
         async function analyzeAllUnanalyzed() {
-            const count = document.getElementById('unanalyzed-count').textContent;
+            const countEl = document.getElementById('unanalyzed-count');
+            const count = countEl ? countEl.textContent : '0';
             if (!confirm('Analyze all ' + count + ' unanalyzed recordings from the current filtered view?')) return;
 
             const btn = document.getElementById('analyze-all-btn');
@@ -817,6 +818,8 @@
                     document.getElementById('progress-detail').textContent = 'Analyzing call ' + (i + 1) + ' of ' + total + ' (ID: ' + logId + ')...';
 
                     try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 min timeout
                         const res = await fetch('/telemarketing/analyze-call/' + logId, {
                             method: 'POST',
                             headers: {
@@ -824,15 +827,19 @@
                                 'Accept': 'application/json',
                                 'Content-Type': 'application/json',
                             },
+                            signal: controller.signal,
                         });
+                        clearTimeout(timeoutId);
                         const result = await res.json();
                         if (result.success) {
                             completed++;
                         } else {
                             failed++;
+                            console.warn('Analysis failed for log ' + logId + ':', result.message);
                         }
                     } catch (e) {
                         failed++;
+                        console.error('Analysis error for log ' + logId + ':', e.message);
                     }
 
                     // Update progress
@@ -840,7 +847,8 @@
                     const pct = Math.round((done / total) * 100);
                     document.getElementById('progress-bar').style.width = pct + '%';
                     document.getElementById('progress-count').textContent = done + ' / ' + total;
-                    document.getElementById('unanalyzed-count').textContent = Math.max(0, parseInt(count) - completed);
+                    const unanalyzedEl = document.getElementById('unanalyzed-count');
+                    if (unanalyzedEl) unanalyzedEl.textContent = Math.max(0, parseInt(count) - completed);
                 }
 
                 // Done
