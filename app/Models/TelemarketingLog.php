@@ -67,6 +67,42 @@ class TelemarketingLog extends Model
     }
 
     /**
+     * Check if all AI analysis fields are fully populated.
+     */
+    public function isFullyAnalyzed(): bool
+    {
+        return $this->ai_analyzed_at
+            && !empty($this->ai_summary)
+            && !empty($this->ai_disposition_id)
+            && !empty($this->ai_sentiment)
+            && !is_null($this->ai_agent_score)
+            && !empty($this->ai_customer_intent)
+            && !is_null($this->ai_key_issues);
+    }
+
+    /**
+     * Scope: logs that have a recording but are NOT fully analyzed.
+     */
+    public function scopeNeedsAnalysis($query)
+    {
+        return $query
+            ->whereNotNull('recording_path')
+            ->where('recording_path', '!=', '')
+            ->where(function ($q) {
+                $q->whereNull('ai_analyzed_at')
+                    ->orWhereNull('ai_summary')
+                    ->orWhere('ai_summary', '')
+                    ->orWhereNull('ai_disposition_id')
+                    ->orWhereNull('ai_sentiment')
+                    ->orWhere('ai_sentiment', '')
+                    ->orWhereNull('ai_agent_score')
+                    ->orWhereNull('ai_customer_intent')
+                    ->orWhere('ai_customer_intent', '')
+                    ->orWhereNull('ai_key_issues');
+            });
+    }
+
+    /**
      * Get the URL for playing back the recording.
      */
     public function getRecordingPlaybackUrl(): ?string

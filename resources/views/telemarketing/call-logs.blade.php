@@ -14,7 +14,7 @@
             @php
                 $totalLogs = $allLogs->flatten()->count();
                 $totalRecordings = $allLogs->flatten()->filter(fn($l) => $l->hasRecording())->count();
-                $totalAnalyzed = $allLogs->flatten()->filter(fn($l) => $l->ai_analyzed_at)->count();
+                $totalAnalyzed = $allLogs->flatten()->filter(fn($l) => $l->isFullyAnalyzed())->count();
                 $totalUnanalyzed = $totalRecordings - $totalAnalyzed;
             @endphp
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -197,6 +197,20 @@
                                             </span>
                                         @else
                                             <span class="text-xs text-gray-400">-</span>
+                                        @endif
+                                    </td>
+                                    {{-- AI Disposition --}}
+                                    <td x-show="isVisible('ai_disposition')" class="px-3 py-3">
+                                        @if($analyzedLog && $analyzedLog->aiDisposition)
+                                            <x-badge :color="$analyzedLog->aiDisposition->color ?? 'blue'">{{ $analyzedLog->aiDisposition->name }}</x-badge>
+                                            @if($shipment->lastDisposition && $analyzedLog->aiDisposition->id !== $shipment->lastDisposition->id)
+                                                <span class="text-red-500 text-xs flex items-center gap-0.5 mt-0.5" title="Mismatch with agent disposition">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                                                    Mismatch
+                                                </span>
+                                            @endif
+                                        @else
+                                            <span class="text-xs text-gray-300 italic">-</span>
                                         @endif
                                     </td>
                                     {{-- AI Summary --}}
@@ -497,13 +511,14 @@
                 { key: 'customer', label: 'Customer', visible: true, order: 2 },
                 { key: 'cod', label: 'COD', visible: true, order: 3 },
                 { key: 'disposition', label: 'Disposition', visible: true, order: 4 },
-                { key: 'summary', label: 'AI Summary', visible: true, order: 5 },
-                { key: 'sentiment', label: 'Sentiment', visible: true, order: 6 },
-                { key: 'intent', label: 'Intent', visible: true, order: 7 },
-                { key: 'score', label: 'Score', visible: true, order: 8 },
-                { key: 'issues', label: 'Issues', visible: true, order: 9 },
-                { key: 'calls', label: 'Calls', visible: true, order: 10 },
-                { key: 'actions', label: 'Actions', visible: true, order: 11 },
+                { key: 'ai_disposition', label: 'AI Disposition', visible: true, order: 5 },
+                { key: 'summary', label: 'AI Summary', visible: true, order: 6 },
+                { key: 'sentiment', label: 'Sentiment', visible: true, order: 7 },
+                { key: 'intent', label: 'Intent', visible: true, order: 8 },
+                { key: 'score', label: 'Score', visible: true, order: 9 },
+                { key: 'issues', label: 'Issues', visible: true, order: 10 },
+                { key: 'calls', label: 'Calls', visible: true, order: 11 },
+                { key: 'actions', label: 'Actions', visible: true, order: 12 },
             ];
 
             // Load saved config from server
@@ -523,12 +538,24 @@
                         columns.push({ ...def, visible: sc.visible, order: sc.order });
                     }
                 });
-                // Then add any new default columns not in saved config
-                defaultColumns.forEach(dc => {
+                // Insert any new default columns at their natural position (after the column that precedes them in defaults)
+                defaultColumns.forEach((dc, defaultIdx) => {
                     if (!savedMap[dc.key]) {
-                        columns.push({ ...dc, order: columns.length });
+                        // Find the preceding default column that exists in saved config
+                        let insertAt = columns.length;
+                        for (let i = defaultIdx - 1; i >= 0; i--) {
+                            const prevKey = defaultColumns[i].key;
+                            const prevIdx = columns.findIndex(c => c.key === prevKey);
+                            if (prevIdx !== -1) {
+                                insertAt = prevIdx + 1;
+                                break;
+                            }
+                        }
+                        columns.splice(insertAt, 0, { ...dc });
                     }
                 });
+                // Re-assign order values based on final position
+                columns.forEach((c, i) => { c.order = i; });
 
                 columns.sort((a, b) => a.order - b.order);
             }

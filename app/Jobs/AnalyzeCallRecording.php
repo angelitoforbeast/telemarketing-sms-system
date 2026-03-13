@@ -49,9 +49,9 @@ class AnalyzeCallRecording implements ShouldQueue
             return;
         }
 
-        // Skip if already analyzed
-        if ($log->ai_analyzed_at) {
-            Log::info('AnalyzeCallRecording: Already analyzed, skipping', ['id' => $this->telemarketingLogId]);
+        // Skip if fully analyzed (all AI fields populated)
+        if ($log->isFullyAnalyzed()) {
+            Log::info('AnalyzeCallRecording: Fully analyzed, skipping', ['id' => $this->telemarketingLogId]);
             return;
         }
 

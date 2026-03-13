@@ -823,10 +823,8 @@ class TelemarketingController extends Controller
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 
-        // Get all unanalyzed logs with recordings
-        $query = TelemarketingLog::whereNotNull('recording_path')
-            ->where('recording_path', '!=', '')
-            ->whereNull('ai_analyzed_at');
+        // Get all logs with recordings that need (re-)analysis (incomplete AI fields)
+        $query = TelemarketingLog::needsAnalysis();
 
         // Company users only see their own company's logs
         if ($user->company_id) {
