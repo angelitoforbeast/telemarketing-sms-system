@@ -12,6 +12,7 @@ use App\Http\Controllers\Shipment\ShipmentController;
 use App\Http\Controllers\Sms\SmsCampaignController;
 use App\Http\Controllers\Sms\SmsDeviceController;
 use App\Http\Controllers\Telemarketing\TelemarketingController;
+use App\Http\Controllers\Telemarketing\OrderController;
 use App\Http\Controllers\Api\RecordingController;
 use App\Http\Controllers\Api\AddressController;
 use Illuminate\Support\Facades\Route;
@@ -114,6 +115,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get("/api/address/cities", [AddressController::class, "cities"])->name("api.address.cities");
         Route::get("/api/address/barangays", [AddressController::class, "barangays"])->name("api.address.barangays");
         Route::get("/api/address/search", [AddressController::class, "search"])->name("api.address.search");
+
+        // Order API (create from call page)
+        Route::post("/api/orders", [OrderController::class, "store"])->name("api.orders.store");
+        Route::get("/api/orders/customer-history", [OrderController::class, "customerHistory"])->name("api.orders.customer-history");
 
         // SMS Campaigns
         // IMPORTANT: 'create' route MUST come before '{campaign}' wildcard

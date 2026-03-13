@@ -14,6 +14,8 @@ use App\Models\TelemarketingDisposition;
 use App\Models\CompanyTelemarketingSetting;
 use App\Models\StatusDispositionMapping;
 use App\Models\User;
+use App\Models\OrderType;
+use App\Models\Order;
 use App\Services\Telemarketing\TelemarketingService;
 use App\Services\CallAnalysisService;
 use App\Models\TelemarketingLog;
@@ -140,7 +142,9 @@ class TelemarketingController extends Controller
         $requireRecording = $autoCallSettings->require_recording ?? false;
         $recordingUploadTimeout = $autoCallSettings->recording_upload_timeout ?? 30;
         $exemptDispositions = $autoCallSettings->recording_exempt_dispositions ?? [];
-        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'calledToday', 'queueCount', 'autoCallSettings', 'recordingMode', 'requireRecording', 'recordingUploadTimeout', 'exemptDispositions'));
+        $orderTypes = OrderType::forCompany($companyId)->active()->orderBy('sort_order')->get();
+        $customerOrders = Order::forCompany($companyId)->forCustomerPhone($shipment->consignee_phone_1 ?? '')->with(['orderType', 'items'])->orderByDesc('created_at')->limit(5)->get();
+        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'calledToday', 'queueCount', 'autoCallSettings', 'recordingMode', 'requireRecording', 'recordingUploadTimeout', 'exemptDispositions', 'orderTypes', 'customerOrders'));
     }
 
     public function logCall(Request $request, Shipment $shipment)

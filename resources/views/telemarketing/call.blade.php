@@ -197,6 +197,7 @@
                                                                     data-requires-callback="{{ $d->requires_callback ? '1' : '0' }}"
                                                                     data-color="{{ $d->color }}"
                                                                     data-is-final="{{ $d->is_final ? '1' : '0' }}"
+                                                                    data-triggers-order="{{ $d->triggers_order ? '1' : '0' }}"
                                                                     data-name="{{ $d->name }}"
                                                                     data-active-class="{{ $c['active'] }}"
                                                                     data-default-class="{{ $c['bg'] }} {{ $c['text'] }}"
@@ -312,6 +313,9 @@
                             </form>
                         </div>
                     </div>
+
+                    {{-- New Order Form (shown when triggers_order disposition selected) --}}
+                    @include('telemarketing.partials.order-form')
 
                     {{-- Call History --}}
                     <div id="call-history-container">
@@ -502,6 +506,17 @@
 
             // Hide validation message
             document.getElementById('disposition-required-msg').classList.add('hidden');
+
+            // Toggle New Order form based on triggers_order flag
+            var triggersOrder = btn.dataset.triggersOrder === '1';
+            var orderSection = document.getElementById('new-order-section');
+            if (orderSection) {
+                if (triggersOrder) {
+                    orderSection.classList.remove('hidden');
+                } else {
+                    orderSection.classList.add('hidden');
+                }
+            }
         }
 
         // Auto-stop timer on form submit + validate disposition
@@ -902,6 +917,213 @@
             enableSaveButtons();
         }
 
+    </script>
+    <script>
+    // ── New Order Form (Alpine.js component) ──
+    function orderForm() {
+        return {
+            orderTypeId: null,
+            customerName: @json($shipment->consignee_name ?? ''),
+            customerPhone: @json($shipment->consignee_phone_1 ?? ''),
+            province: '',
+            city: '',
+            barangay: '',
+            addressDetails: '',
+            provinces: [],
+            cities: [],
+            barangays: [],
+            items: [{ item_name: '', quantity: 1, unit_price: 0 }],
+            todayStr: new Date().toISOString().split('T')[0],
+            processDate: new Date().toISOString().split('T')[0],
+            orderNotes: '',
+            submitting: false,
+
+            get totalAmount() {
+                return this.items.reduce(function(sum, item) {
+                    return sum + (item.quantity * item.unit_price);
+                }, 0);
+            },
+
+            get isValid() {
+                return this.orderTypeId
+                    && this.province
+                    && this.city
+                    && this.barangay
+                    && this.processDate
+                    && this.items.length > 0
+                    && this.items.every(function(i) { return i.item_name && i.quantity > 0 && i.unit_price >= 0; });
+            },
+
+            init() {
+                this.loadProvinces();
+            },
+
+            loadProvinces() {
+                var self = this;
+                fetch('/api/address/provinces', {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { self.provinces = data; })
+                .catch(function(err) { console.error('Load provinces error:', err); });
+            },
+
+            loadCities() {
+                this.city = '';
+                this.barangay = '';
+                this.cities = [];
+                this.barangays = [];
+                if (!this.province) return;
+                var self = this;
+                fetch('/api/address/cities?province=' + encodeURIComponent(this.province), {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { self.cities = data; })
+                .catch(function(err) { console.error('Load cities error:', err); });
+            },
+
+            loadBarangays() {
+                this.barangay = '';
+                this.barangays = [];
+                if (!this.province || !this.city) return;
+                var self = this;
+                fetch('/api/address/barangays?province=' + encodeURIComponent(this.province) + '&city=' + encodeURIComponent(this.city), {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { self.barangays = data; })
+                .catch(function(err) { console.error('Load barangays error:', err); });
+            },
+
+            useExistingAddress() {
+                var existingProvince = @json($shipment->consignee_province ?? '');
+                var existingCity = @json($shipment->consignee_city ?? '');
+                var existingBarangay = @json($shipment->consignee_barangay ?? '');
+                var existingAddress = @json($shipment->consignee_address ?? '');
+
+                if (existingProvince) {
+                    this.province = existingProvince.toUpperCase();
+                    var self = this;
+                    fetch('/api/address/cities?province=' + encodeURIComponent(this.province), {
+                        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin'
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        self.cities = data;
+                        var matchCity = existingCity.toUpperCase();
+                        var found = data.find(function(c) { return c.toUpperCase() === matchCity || c.toUpperCase().replace(/-/g, ' ') === matchCity.replace(/-/g, ' '); });
+                        if (found) {
+                            self.city = found;
+                            return fetch('/api/address/barangays?province=' + encodeURIComponent(self.province) + '&city=' + encodeURIComponent(self.city), {
+                                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                                credentials: 'same-origin'
+                            });
+                        }
+                    })
+                    .then(function(r) { if (r) return r.json(); })
+                    .then(function(data) {
+                        if (data) {
+                            self.barangays = data;
+                            var matchBrgy = existingBarangay.toUpperCase();
+                            var found = data.find(function(b) { return b.toUpperCase() === matchBrgy; });
+                            if (found) self.barangay = found;
+                        }
+                    })
+                    .catch(function(err) { console.error('Use existing address error:', err); });
+                }
+                if (existingAddress) {
+                    this.addressDetails = existingAddress;
+                }
+            },
+
+            addItem() {
+                this.items.push({ item_name: '', quantity: 1, unit_price: 0 });
+            },
+
+            removeItem(index) {
+                if (this.items.length > 1) {
+                    this.items.splice(index, 1);
+                }
+            },
+
+            resetForm() {
+                this.orderTypeId = null;
+                this.province = '';
+                this.city = '';
+                this.barangay = '';
+                this.addressDetails = '';
+                this.cities = [];
+                this.barangays = [];
+                this.items = [{ item_name: '', quantity: 1, unit_price: 0 }];
+                this.processDate = this.todayStr;
+                this.orderNotes = '';
+                document.getElementById('order-status-msg').textContent = '';
+                document.getElementById('order-success-area').classList.add('hidden');
+            },
+
+            submitOrder() {
+                if (this.submitting || !this.isValid) return;
+                this.submitting = true;
+                var statusMsg = document.getElementById('order-status-msg');
+                var successArea = document.getElementById('order-success-area');
+                statusMsg.textContent = '';
+                statusMsg.className = 'text-sm';
+                successArea.classList.add('hidden');
+
+                var self = this;
+                var payload = {
+                    shipment_id: {{ $shipment->id }},
+                    telemarketing_log_id: (typeof currentDraftLogId !== 'undefined') ? currentDraftLogId : null,
+                    order_type_id: this.orderTypeId,
+                    customer_phone: this.customerPhone,
+                    customer_name: this.customerName,
+                    province: this.province,
+                    city: this.city,
+                    barangay: this.barangay,
+                    address_details: this.addressDetails,
+                    process_date: this.processDate,
+                    notes: this.orderNotes,
+                    items: this.items
+                };
+
+                fetch('/api/orders', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(payload)
+                })
+                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+                .then(function(result) {
+                    self.submitting = false;
+                    if (result.ok && result.data.success) {
+                        successArea.classList.remove('hidden');
+                        document.getElementById('order-success-text').textContent = result.data.message;
+                        self.resetForm();
+                        successArea.classList.remove('hidden');
+                    } else {
+                        statusMsg.textContent = result.data.message || 'Failed to create order.';
+                        statusMsg.className = 'text-sm text-red-600 font-medium';
+                    }
+                })
+                .catch(function(err) {
+                    self.submitting = false;
+                    statusMsg.textContent = 'Network error. Please try again.';
+                    statusMsg.className = 'text-sm text-red-600 font-medium';
+                    console.error('Order submit error:', err);
+                });
+            }
+        };
+    }
     </script>
     @endpush
 </x-app-layout>
