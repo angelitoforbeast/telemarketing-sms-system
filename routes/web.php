@@ -5,6 +5,7 @@ use App\Http\Controllers\Company\DashboardController;
 use App\Http\Controllers\Company\RemittanceController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\OrderTypeController;
+use App\Http\Controllers\Company\ProductController;
 use App\Http\Controllers\Import\ImportController;
 use App\Http\Controllers\Platform\PlatformAdminController;
 use App\Http\Controllers\ProfileController;
@@ -117,6 +118,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get("/api/address/barangays", [AddressController::class, "barangays"])->name("api.address.barangays");
         Route::get("/api/address/search", [AddressController::class, "search"])->name("api.address.search");
 
+        Route::get("/api/products", [ProductController::class, "apiList"])->name("api.products");
+        Route::post("/api/products/{product}/tiers", [ProductController::class, "saveTiers"])->name("api.products.tiers");
+
         // Order API (create from call page)
         Route::post("/api/orders", [OrderController::class, "store"])->name("api.orders.store");
         Route::get("/api/orders/customer-history", [OrderController::class, "customerHistory"])->name("api.orders.customer-history");
@@ -176,6 +180,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post("/settings/order-types", [OrderTypeController::class, "store"])->name("settings.order-types.store");
             Route::put("/settings/order-types/{orderType}", [OrderTypeController::class, "update"])->name("settings.order-types.update");
             Route::delete("/settings/order-types/{orderType}", [OrderTypeController::class, "destroy"])->name("settings.order-types.destroy");
+
+            Route::get("/settings/products", [ProductController::class, "index"])->name("settings.products");
+            Route::post("/settings/products", [ProductController::class, "store"])->name("settings.products.store");
+            Route::put("/settings/products/{product}", [ProductController::class, "update"])->name("settings.products.update");
+            Route::delete("/settings/products/{product}", [ProductController::class, "destroy"])->name("settings.products.destroy");
 
             // Orders list & management
             Route::get("/orders", [OrderListController::class, "index"])->name("orders.index");
