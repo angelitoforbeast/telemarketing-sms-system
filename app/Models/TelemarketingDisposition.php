@@ -29,6 +29,7 @@ class TelemarketingDisposition extends Model
         'requires_callback',
         'marks_do_not_call',
         'is_recallable_on_status_change',
+        'triggers_order',
     ];
 
     protected $casts = [
@@ -37,6 +38,7 @@ class TelemarketingDisposition extends Model
         'requires_callback' => 'boolean',
         'marks_do_not_call' => 'boolean',
         'is_recallable_on_status_change' => 'boolean',
+        'triggers_order' => 'boolean',
     ];
 
     public function company()
