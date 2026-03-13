@@ -67,8 +67,16 @@
                             </select>
                         </div>
                         <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Recording</label>
+                            <select name="recording" class="text-sm border-gray-300 rounded-md shadow-sm">
+                                <option value="all" {{ ($filterDefaults['recording'] ?? 'with') == 'all' ? 'selected' : '' }}>All Calls</option>
+                                <option value="with" {{ ($filterDefaults['recording'] ?? 'with') == 'with' ? 'selected' : '' }}>With Recordings</option>
+                                <option value="without" {{ ($filterDefaults['recording'] ?? 'with') == 'without' ? 'selected' : '' }}>Without Recordings</option>
+                            </select>
+                        </div>
+                        <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">From</label>
-                            <input type="date" name="date_from" value="{{ request('date_from') }}" class="text-sm border-gray-300 rounded-md shadow-sm">
+                            <input type="date" name="date_from" value="{{ $filterDefaults['date_from'] ?? request('date_from') }}" class="text-sm border-gray-300 rounded-md shadow-sm">
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">To</label>

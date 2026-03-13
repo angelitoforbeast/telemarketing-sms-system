@@ -710,6 +710,11 @@ class TelemarketingController extends Controller
         $user = $request->user();
         $companyId = $user->company_id;
 
+        // Apply defaults when no filters are submitted (first page load)
+        $hasFilters = $request->hasAny(['status', 'telemarketer_id', 'disposition_id', 'date_from', 'date_to', 'recording']);
+        $defaultDateFrom = $hasFilters ? $request->date_from : now()->format('Y-m-d');
+        $defaultRecording = $hasFilters ? ($request->recording ?? 'all') : 'with';
+
         // Build a query on Shipments that have telemarketing logs
         $query = Shipment::with(['status', 'lastDisposition'])
             ->whereHas('telemarketingLogs')
@@ -732,8 +737,8 @@ class TelemarketingController extends Controller
         }
 
         // Filter by date range (based on log created_at)
-        if ($request->filled('date_from')) {
-            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '>=', $request->date_from));
+        if (!empty($defaultDateFrom)) {
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '>=', $defaultDateFrom));
         }
         if ($request->filled('date_to')) {
             $query->whereHas('telemarketingLogs', fn ($q) => $q->where('created_at', '<=', $request->date_to . ' 23:59:59'));
@@ -742,6 +747,13 @@ class TelemarketingController extends Controller
         // Filter by status (draft/completed) — show shipments that have at least one log with this status
         if ($request->filled('status') && $request->status !== 'all') {
             $query->whereHas('telemarketingLogs', fn ($q) => $q->where('status', $request->status));
+        }
+
+        // Filter by recording availability
+        if ($defaultRecording === 'with') {
+            $query->whereHas('telemarketingLogs', fn ($q) => $q->whereNotNull('recording_path')->where('recording_path', '!=', ''));
+        } elseif ($defaultRecording === 'without') {
+            $query->whereDoesntHave('telemarketingLogs', fn ($q) => $q->whereNotNull('recording_path')->where('recording_path', '!=', ''));
         }
 
         $shipments = $query->paginate(25)->withQueryString();
@@ -764,7 +776,14 @@ class TelemarketingController extends Controller
         $dispositions = $this->telemarketingService->getDispositions($companyId);
 
         $columnConfig = CompanyTelemarketingSetting::getOrCreate($companyId ?? 0)->call_log_columns;
-        return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions', 'columnConfig'));
+
+        // Pass effective filter values to the view (for pre-filling form inputs)
+        $filterDefaults = [
+            'date_from' => $defaultDateFrom,
+            'recording' => $defaultRecording,
+        ];
+
+        return view('telemarketing.call-logs', compact('shipments', 'allLogs', 'telemarketers', 'dispositions', 'columnConfig', 'filterDefaults'));
     }
 
     // ────────────────────────────────────────────────────────────────
