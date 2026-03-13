@@ -4,6 +4,7 @@ use App\Http\Controllers\Company\CompanyUserController;
 use App\Http\Controllers\Company\DashboardController;
 use App\Http\Controllers\Company\RemittanceController;
 use App\Http\Controllers\Company\SettingsController;
+use App\Http\Controllers\Company\OrderTypeController;
 use App\Http\Controllers\Import\ImportController;
 use App\Http\Controllers\Platform\PlatformAdminController;
 use App\Http\Controllers\ProfileController;
@@ -163,6 +164,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             // Role Permissions
             Route::get('/settings/role-permissions', [SettingsController::class, 'rolePermissions'])->name('settings.role-permissions');
             Route::put('/settings/role-permissions', [SettingsController::class, 'updateRolePermissions'])->name('settings.role-permissions.update');
+
+            // Order Types Management
+            Route::get("/settings/order-types", [OrderTypeController::class, "index"])->name("settings.order-types");
+            Route::post("/settings/order-types", [OrderTypeController::class, "store"])->name("settings.order-types.store");
+            Route::put("/settings/order-types/{orderType}", [OrderTypeController::class, "update"])->name("settings.order-types.update");
+            Route::delete("/settings/order-types/{orderType}", [OrderTypeController::class, "destroy"])->name("settings.order-types.destroy");
         });
 
         // Company User Management
