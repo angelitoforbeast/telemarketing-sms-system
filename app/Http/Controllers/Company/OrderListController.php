@@ -73,7 +73,7 @@ class OrderListController extends Controller
 
         // Filter options
         $orderTypes = OrderType::forCompany($companyId)->active()->orderBy('sort_order')->get();
-        $telemarketers = User::where('company_id', $companyId)->where('role', 'telemarketer')->orderBy('name')->get();
+        $telemarketers = User::where('company_id', $companyId)->where('is_telemarketing_active', true)->orderBy('name')->get();
 
         return view('orders.index', compact('orders', 'stats', 'orderTypes', 'telemarketers', 'dateFilter'));
     }
