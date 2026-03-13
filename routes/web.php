@@ -15,6 +15,7 @@ use App\Http\Controllers\Telemarketing\TelemarketingController;
 use App\Http\Controllers\Telemarketing\OrderController;
 use App\Http\Controllers\Api\RecordingController;
 use App\Http\Controllers\Api\AddressController;
+use App\Http\Controllers\Company\OrderListController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -175,6 +176,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post("/settings/order-types", [OrderTypeController::class, "store"])->name("settings.order-types.store");
             Route::put("/settings/order-types/{orderType}", [OrderTypeController::class, "update"])->name("settings.order-types.update");
             Route::delete("/settings/order-types/{orderType}", [OrderTypeController::class, "destroy"])->name("settings.order-types.destroy");
+
+            // Orders list & management
+            Route::get("/orders", [OrderListController::class, "index"])->name("orders.index");
+            Route::get("/orders/export", [OrderListController::class, "export"])->name("orders.export");
+            Route::get("/orders/{order}", [OrderListController::class, "show"])->name("orders.show");
+            Route::put("/orders/{order}/status", [OrderListController::class, "updateStatus"])->name("orders.update-status");
         });
 
         // Company User Management

@@ -32,6 +32,10 @@
                         </x-nav-link>
                         @endcan
 
+                        <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*')">
+                            Orders
+                        </x-nav-link>
+
                         @can('sms.campaigns.view')
                         <x-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">
                             SMS Campaigns
@@ -124,6 +128,7 @@
                 @can('telemarketing.view-queue')
                 <x-responsive-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.*')">Telemarketing</x-responsive-nav-link>
                 @endcan
+                <x-responsive-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*')">Orders</x-responsive-nav-link>
                 @can('sms.campaigns.view')
                 <x-responsive-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">SMS Campaigns</x-responsive-nav-link>
                 @endcan
