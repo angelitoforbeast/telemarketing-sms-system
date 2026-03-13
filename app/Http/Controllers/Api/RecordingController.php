@@ -7,6 +7,7 @@ use App\Models\Shipment;
 use App\Models\TelemarketingLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\AnalyzeCallRecording;
 use Illuminate\Support\Facades\Storage;
 
 class RecordingController extends Controller
@@ -165,6 +166,11 @@ class RecordingController extends Controller
             if ($request->filled('call_duration') && (!$log->call_duration_seconds || $log->call_duration_seconds == 0)) {
                 $log->update(['call_duration_seconds' => (int) $request->call_duration]);
             }
+        }
+
+        // Auto-dispatch AI analysis job if recording was linked to a log
+        if ($log && $log->recording_path) {
+            AnalyzeCallRecording::dispatch($log->id)->delay(now()->addSeconds(10));
         }
 
         return response()->json([

@@ -16,6 +16,7 @@ use App\Models\StatusDispositionMapping;
 use App\Models\User;
 use App\Models\OrderType;
 use App\Models\Order;
+use App\Jobs\AnalyzeCallRecording;
 use App\Services\Telemarketing\TelemarketingService;
 use App\Services\CallAnalysisService;
 use App\Models\TelemarketingLog;
@@ -191,6 +192,9 @@ class TelemarketingController extends Controller
                 'log_id' => $log->id,
                 'user_id' => $request->user()->id,
             ]);
+
+            // Auto-dispatch AI analysis job
+            AnalyzeCallRecording::dispatch($log->id)->delay(now()->addSeconds(5));
         }
 
         if ($request->input('action') === 'save_next') {
@@ -837,31 +841,15 @@ class TelemarketingController extends Controller
             return response()->json(['success' => true, 'queued' => 0, 'message' => 'No unanalyzed recordings found.']);
         }
 
-        // Process each one (synchronously for now - can be converted to queue jobs later)
-        $service = new CallAnalysisService();
-        $processed = 0;
-        $failed = 0;
-
-        foreach ($logs as $log) {
-            try {
-                $result = $service->analyze($log);
-                if ($result['success']) {
-                    $processed++;
-                } else {
-                    $failed++;
-                }
-            } catch (\Exception $e) {
-                $failed++;
-                \Illuminate\Support\Facades\Log::error('Bulk analyze failed for log ' . $log->id, ['error' => $e->getMessage()]);
-            }
+        // Dispatch each recording to the queue for background processing
+        foreach ($logs as $index => $log) {
+            AnalyzeCallRecording::dispatch($log->id)->delay(now()->addSeconds($index * 5));
         }
 
         return response()->json([
             'success' => true,
             'queued' => $count,
-            'processed' => $processed,
-            'failed' => $failed,
-            'message' => "Analyzed {$processed} recordings" . ($failed > 0 ? " ({$failed} failed)" : ''),
+            'message' => "Queued {$count} recordings for analysis. Results will appear automatically.",
         ]);
     }
 
