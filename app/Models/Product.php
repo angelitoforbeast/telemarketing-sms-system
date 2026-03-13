@@ -15,6 +15,8 @@ class Product extends Model
         'default_price',
         'is_active',
         'sort_order',
+        'created_by',
+        'updated_by',
     ];
 
     protected $casts = [
@@ -47,6 +49,21 @@ class Product extends Model
             ->first();
 
         return $tier ? (float) $tier->price : (float) $this->default_price;
+    }
+
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function updatedBy()
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function activityLogs()
+    {
+        return $this->hasMany(ProductActivityLog::class);
     }
 
     public function scopeActive($query)
