@@ -106,12 +106,12 @@
                 </div>
             </div>
 
-            {{-- Order Items - MOBILE RESPONSIVE --}}
+            {{-- Order Items - PRODUCT DROPDOWN WITH AUTO-PRICING --}}
             <div class="mb-4">
                 <div class="flex items-center justify-between mb-2">
                     <label class="block text-sm font-medium text-gray-700">
                         Items *
-                        <span x-show="items.some(function(i){ return !i.item_name; }) && showErrors" class="text-red-500 text-xs ml-1">— Item name required</span>
+                        <span x-show="items.some(function(i){ return !i.product_id; }) && showErrors" class="text-red-500 text-xs ml-1">— Select a product</span>
                     </label>
                     <button type="button" @click="addItem()" class="inline-flex items-center text-xs text-indigo-600 hover:text-indigo-800 font-medium">
                         <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -119,47 +119,60 @@
                     </button>
                 </div>
 
+                <template x-if="products.length === 0">
+                    <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+                        No products configured yet. Ask your CEO/Owner to add products in Settings &rarr; Products.
+                    </div>
+                </template>
+
                 <div class="space-y-3">
                     <template x-for="(item, index) in items" :key="index">
                         <div class="p-3 bg-gray-50 rounded-lg border">
-                            {{-- Item Name - FULL WIDTH on top --}}
+                            {{-- Product Dropdown - FULL WIDTH on top --}}
                             <div class="mb-2">
-                                <label class="block text-xs text-gray-500 mb-1">Item Name *</label>
-                                <input type="text" x-model="item.item_name" placeholder="Product name"
-                                       :class="!item.item_name && showErrors ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'"
-                                       class="w-full rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <label class="block text-xs text-gray-500 mb-1">Product *</label>
+                                <select x-model="item.product_id" @change="onProductChange(index)"
+                                        :class="!item.product_id && showErrors ? 'border-red-400 ring-1 ring-red-400' : 'border-gray-300'"
+                                        class="w-full rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">-- Select Product --</option>
+                                    <template x-for="p in products" :key="p.id">
+                                        <option :value="String(p.id)" x-text="p.name + ' (&#8369;' + p.default_price.toFixed(2) + ')'"></option>
+                                    </template>
+                                </select>
                             </div>
-                            {{-- Qty, Price, Subtotal - in a row below --}}
+                            {{-- Qty, Price (read-only), Subtotal - in a row below --}}
                             <div class="flex items-end gap-2">
                                 {{-- Quantity with +/- buttons --}}
                                 <div class="flex-shrink-0">
                                     <label class="block text-xs text-gray-500 mb-1">Qty</label>
                                     <div class="flex items-center border border-gray-300 rounded-md overflow-hidden bg-white">
-                                        <button type="button" @click="item.quantity = Math.max(1, item.quantity - 1)"
+                                        <button type="button" @click="changeQty(index, -1)"
                                                 class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition border-r border-gray-300">
                                             &minus;
                                         </button>
-                                        <input type="number" x-model.number="item.quantity" min="1"
+                                        <input type="number" x-model.number="item.quantity" min="1" @change="updatePrice(index)"
                                                class="w-12 text-center border-0 text-sm focus:ring-0 py-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                                        <button type="button" @click="item.quantity++"
+                                        <button type="button" @click="changeQty(index, 1)"
                                                 class="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm transition border-l border-gray-300">
                                             +
                                         </button>
                                     </div>
                                 </div>
 
-                                {{-- Unit Price --}}
+                                {{-- Unit Price (system-set, read-only) --}}
                                 <div class="flex-1 min-w-0">
-                                    <label class="block text-xs text-gray-500 mb-1">Price (₱)</label>
-                                    <input type="number" x-model.number="item.unit_price" min="0" step="0.01"
-                                           placeholder="0.00"
-                                           class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <label class="block text-xs text-gray-500 mb-1">
+                                        Price (&#8369;)
+                                        <span class="text-indigo-500 italic text-[10px]" x-show="item.tier_label" x-text="item.tier_label"></span>
+                                    </label>
+                                    <div class="w-full bg-gray-100 border border-gray-300 rounded-md shadow-sm text-sm py-1.5 px-3 text-gray-700 font-medium"
+                                         x-text="'&#8369;' + (item.unit_price || 0).toFixed(2)"></div>
                                 </div>
 
                                 {{-- Subtotal --}}
                                 <div class="flex-shrink-0 text-right">
                                     <label class="block text-xs text-gray-500 mb-1">Subtotal</label>
-                                    <p class="text-sm font-semibold text-gray-900 py-1.5 whitespace-nowrap" x-text="'₱' + (item.quantity * item.unit_price).toFixed(2)"></p>
+                                    <p class="text-sm font-semibold text-gray-900 py-1.5 whitespace-nowrap" x-text="'&#8369;' + (item.quantity * item.unit_price).toFixed(2)"></p>
                                 </div>
 
                                 {{-- Remove button --}}
@@ -178,7 +191,7 @@
                 <div class="mt-3 flex justify-end">
                     <div class="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
                         <span class="text-sm text-green-700">Total COD:</span>
-                        <span class="text-lg font-bold text-green-800 ml-2" x-text="'₱' + totalAmount.toFixed(2)"></span>
+                        <span class="text-lg font-bold text-green-800 ml-2" x-text="'&#8369;' + totalAmount.toFixed(2)"></span>
                     </div>
                 </div>
             </div>
@@ -210,7 +223,7 @@
                 <ul class="text-xs text-red-600 mt-1 list-disc list-inside">
                     <li x-show="!orderTypeId">Select an Order Type</li>
                     <li x-show="!province || !city || !barangay">Complete the delivery address (Province, City, Barangay)</li>
-                    <li x-show="items.some(function(i){ return !i.item_name; })">Enter item name for all items</li>
+                    <li x-show="items.some(function(i){ return !i.product_id; })">Select a product for all items</li>
                     <li x-show="items.some(function(i){ return i.quantity < 1; })">Quantity must be at least 1</li>
                     <li x-show="!processDate">Set a process date</li>
                 </ul>
@@ -264,7 +277,7 @@
                         <span class="text-gray-600">{{ $co->items->count() }} item(s)</span>
                     </div>
                     <div class="flex items-center space-x-3">
-                        <span class="font-semibold text-gray-900">₱{{ number_format($co->total_amount, 2) }}</span>
+                        <span class="font-semibold text-gray-900">&#8369;{{ number_format($co->total_amount, 2) }}</span>
                         <span class="text-xs text-gray-500">{{ $co->created_at->format('M d, Y') }}</span>
                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
                             {{ $co->status === 'pending' ? 'bg-yellow-100 text-yellow-800' : '' }}

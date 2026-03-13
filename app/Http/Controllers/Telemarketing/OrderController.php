@@ -31,6 +31,7 @@ class OrderController extends Controller
             'process_date' => 'required|date',
             'notes' => 'nullable|string|max:1000',
             'items' => 'required|array|min:1',
+            'items.*.product_id' => 'nullable|integer',
             'items.*.item_name' => 'required|string|max:255',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
@@ -67,6 +68,7 @@ class OrderController extends Controller
                 foreach ($request->items as $item) {
                     OrderItem::create([
                         'order_id' => $order->id,
+                        'product_id' => $item['product_id'] ?? null,
                         'item_name' => $item['item_name'],
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
@@ -79,6 +81,7 @@ class OrderController extends Controller
 
             Log::info('New order created from call page', [
                 'order_id' => $order->id,
+                        'product_id' => $item['product_id'] ?? null,
                 'shipment_id' => $request->shipment_id,
                 'customer_phone' => $request->customer_phone,
                 'total' => $order->total_amount,
@@ -89,6 +92,7 @@ class OrderController extends Controller
             return response()->json([
                 'success' => true,
                 'order_id' => $order->id,
+                        'product_id' => $item['product_id'] ?? null,
                 'message' => 'Order #' . $order->id . ' created successfully!',
             ]);
 

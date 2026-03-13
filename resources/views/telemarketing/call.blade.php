@@ -932,7 +932,8 @@
             provinces: [],
             cities: [],
             barangays: [],
-            items: [{ item_name: '', quantity: 1, unit_price: 0 }],
+            products: [],
+            items: [{ product_id: '', item_name: '', quantity: 1, unit_price: 0, tier_label: '' }],
             todayStr: new Date().toISOString().split('T')[0],
             processDate: new Date().toISOString().split('T')[0],
             orderNotes: '',
@@ -952,11 +953,68 @@
                     && this.barangay
                     && this.processDate
                     && this.items.length > 0
-                    && this.items.every(function(i) { return i.item_name && i.quantity > 0 && i.unit_price >= 0; });
+                    && this.items.every(function(i) { return i.product_id && i.quantity > 0; });
             },
 
             init() {
                 this.loadProvinces();
+                this.loadProducts();
+            },
+
+            loadProducts() {
+                var self = this;
+                fetch('/api/products', {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { self.products = data; })
+                .catch(function(err) { console.error('Load products error:', err); });
+            },
+
+            getPriceForQty(product, qty) {
+                if (!product || !product.tiers || product.tiers.length === 0) {
+                    return { price: product ? product.default_price : 0, label: '' };
+                }
+                for (var i = 0; i < product.tiers.length; i++) {
+                    var t = product.tiers[i];
+                    if (qty >= t.min_qty && (t.max_qty === null || qty <= t.max_qty)) {
+                        return { price: t.price, label: 'Tier: ' + t.min_qty + (t.max_qty ? '-' + t.max_qty : '+') };
+                    }
+                }
+                return { price: product.default_price, label: '' };
+            },
+
+            onProductChange(index) {
+                var item = this.items[index];
+                var product = this.products.find(function(p) { return String(p.id) === String(item.product_id); });
+                if (product) {
+                    item.item_name = product.name;
+                    var result = this.getPriceForQty(product, item.quantity);
+                    item.unit_price = result.price;
+                    item.tier_label = result.label;
+                } else {
+                    item.item_name = '';
+                    item.unit_price = 0;
+                    item.tier_label = '';
+                }
+            },
+
+            changeQty(index, delta) {
+                var item = this.items[index];
+                item.quantity = Math.max(1, item.quantity + delta);
+                this.updatePrice(index);
+            },
+
+            updatePrice(index) {
+                var item = this.items[index];
+                if (item.quantity < 1) item.quantity = 1;
+                var product = this.products.find(function(p) { return String(p.id) === String(item.product_id); });
+                if (product) {
+                    var result = this.getPriceForQty(product, item.quantity);
+                    item.unit_price = result.price;
+                    item.tier_label = result.label;
+                }
             },
 
             loadProvinces() {
@@ -1043,7 +1101,7 @@
             },
 
             addItem() {
-                this.items.push({ item_name: '', quantity: 1, unit_price: 0 });
+                this.items.push({ product_id: '', item_name: '', quantity: 1, unit_price: 0, tier_label: '' });
             },
 
             removeItem(index) {
@@ -1060,7 +1118,7 @@
                 this.addressDetails = '';
                 this.cities = [];
                 this.barangays = [];
-                this.items = [{ item_name: '', quantity: 1, unit_price: 0 }];
+                this.items = [{ product_id: '', item_name: '', quantity: 1, unit_price: 0, tier_label: '' }];
                 this.processDate = this.todayStr;
                 this.orderNotes = '';
                 this.showErrors = false;

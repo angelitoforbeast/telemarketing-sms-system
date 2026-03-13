@@ -99,6 +99,30 @@
                 </div>
             </div>
 
+            {{-- Order Types Link --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mt-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Order Types</h3>
+                        <p class="text-sm text-gray-500 mt-1">Manage order types like Reorder, Distributorship, etc.</p>
+                    </div>
+                    <a href="{{ route('settings.order-types') }}" class="inline-flex items-center px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-md hover:bg-orange-700 transition">
+                        Manage &rarr;
+                    </a>
+                </div>
+            </div>
+            {{-- Products Link --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mt-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-800">Products / Item Catalog</h3>
+                        <p class="text-sm text-gray-500 mt-1">Manage products with pricing and quantity-based price tiers.</p>
+                    </div>
+                    <a href="{{ route('settings.products') }}" class="inline-flex items-center px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 transition">
+                        Manage &rarr;
+                    </a>
+                </div>
+            </div>
             {{-- Role Permissions Link --}}
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mt-6">
                 <div class="flex items-center justify-between">
