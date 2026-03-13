@@ -12,6 +12,7 @@ use App\Http\Controllers\Sms\SmsCampaignController;
 use App\Http\Controllers\Sms\SmsDeviceController;
 use App\Http\Controllers\Telemarketing\TelemarketingController;
 use App\Http\Controllers\Api\RecordingController;
+use App\Http\Controllers\Api\AddressController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -106,6 +107,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/api/telemarketing/create-draft-log', [RecordingController::class, 'createDraftLog'])->name('api.telemarketing.create-draft-log');
         Route::get("/api/telemarketing/check-recording/{shipment}", [RecordingController::class, "checkRecording"])->name("api.telemarketing.check-recording");
         Route::get("/api/telemarketing/call-history/{shipment}", [TelemarketingController::class, "callHistoryApi"])->name("api.telemarketing.call-history");
+
+        // Address API (cascading dropdowns)
+        Route::get("/api/address/provinces", [AddressController::class, "provinces"])->name("api.address.provinces");
+        Route::get("/api/address/cities", [AddressController::class, "cities"])->name("api.address.cities");
+        Route::get("/api/address/barangays", [AddressController::class, "barangays"])->name("api.address.barangays");
+        Route::get("/api/address/search", [AddressController::class, "search"])->name("api.address.search");
 
         // SMS Campaigns
         // IMPORTANT: 'create' route MUST come before '{campaign}' wildcard
