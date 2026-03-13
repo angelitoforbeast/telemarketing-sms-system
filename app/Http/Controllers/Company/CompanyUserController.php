@@ -83,13 +83,14 @@ class CompanyUserController extends Controller
     /**
      * Update a user.
      */
-    public function update(Request $request, User $targetUser)
+    public function update(Request $request, User $user)
     {
-        $this->authorizeCompanyUser($targetUser);
+    
+        $this->authorizeCompanyUser($user);
 
         $rules = [
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $targetUser->id,
+            'email' => 'required|email|unique:users,email,' . $user->id,
             'role' => 'required|string|exists:roles,name',
             'is_active' => 'boolean',
         ];
@@ -111,9 +112,9 @@ class CompanyUserController extends Controller
             $data['password'] = $request->password;
         }
 
-        $targetUser->update($data);
+        $user->update($data);
 
-        $targetUser->syncRoles([$request->role]);
+        $user->syncRoles([$request->role]);
 
         return redirect()->route('company.users.index')
             ->with('success', 'User updated successfully.');

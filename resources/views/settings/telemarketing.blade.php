@@ -70,6 +70,151 @@
                 </form>
             </div>
 
+            {{-- Call Recording Mode --}}
+            @can('telemarketing.manage-recording-mode')
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Call Recording Mode</h3>
+                <p class="text-sm text-gray-500 mb-4">Control how call recordings are captured. Auto mode uses the Android app to automatically record and upload. Manual mode lets agents upload recordings themselves. Both mode enables both options.</p>
+
+                <form method="POST" action="{{ route('settings.telemarketing.update') }}">
+                    @csrf
+                    @method('PUT')
+
+                    {{-- Pass existing settings so they don't get wiped --}}
+                    <input type="hidden" name="auto_call_enabled" value="{{ $settings->auto_call_enabled ? '1' : '0' }}">
+                    <input type="hidden" name="auto_call_delay" value="{{ $settings->auto_call_delay }}">
+                    <input type="hidden" name="queue_mode" value="{{ $settings->queue_mode }}">
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        {{-- Auto --}}
+                        <label class="relative flex flex-col items-center p-4 border-2 rounded-lg cursor-pointer transition
+                            {{ $settings->recording_mode == 'auto' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300' }}">
+                            <input type="radio" name="recording_mode" value="auto" class="sr-only peer" {{ $settings->recording_mode == 'auto' ? 'checked' : '' }}>
+                            <div class="w-12 h-12 mb-3 flex items-center justify-center rounded-full {{ $settings->recording_mode == 'auto' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500' }}">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                            </div>
+                            <p class="text-sm font-semibold text-gray-900">Auto</p>
+                            <p class="text-xs text-gray-500 text-center mt-1">Android app auto-records and uploads calls</p>
+                            <div class="absolute top-2 right-2 {{ $settings->recording_mode == 'auto' ? '' : 'hidden' }}" id="check-auto">
+                                <svg class="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                            </div>
+                        </label>
+
+                        {{-- Manual --}}
+                        <label class="relative flex flex-col items-center p-4 border-2 rounded-lg cursor-pointer transition
+                            {{ $settings->recording_mode == 'manual' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300' }}">
+                            <input type="radio" name="recording_mode" value="manual" class="sr-only peer" {{ $settings->recording_mode == 'manual' ? 'checked' : '' }}>
+                            <div class="w-12 h-12 mb-3 flex items-center justify-center rounded-full {{ $settings->recording_mode == 'manual' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500' }}">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                            </div>
+                            <p class="text-sm font-semibold text-gray-900">Manual</p>
+                            <p class="text-xs text-gray-500 text-center mt-1">Agents manually upload recording files after calls</p>
+                            <div class="absolute top-2 right-2 {{ $settings->recording_mode == 'manual' ? '' : 'hidden' }}" id="check-manual">
+                                <svg class="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                            </div>
+                        </label>
+
+                        {{-- Both --}}
+                        <label class="relative flex flex-col items-center p-4 border-2 rounded-lg cursor-pointer transition
+                            {{ $settings->recording_mode == 'both' ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300' }}">
+                            <input type="radio" name="recording_mode" value="both" class="sr-only peer" {{ $settings->recording_mode == 'both' ? 'checked' : '' }}>
+                            <div class="w-12 h-12 mb-3 flex items-center justify-center rounded-full {{ $settings->recording_mode == 'both' ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-500' }}">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                            </div>
+                            <p class="text-sm font-semibold text-gray-900">Both</p>
+                            <p class="text-xs text-gray-500 text-center mt-1">Auto-record via app + manual upload option available</p>
+                            <div class="absolute top-2 right-2 {{ $settings->recording_mode == 'both' ? '' : 'hidden' }}" id="check-both">
+                                <svg class="w-5 h-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition">
+                            Save Recording Mode
+                        </button>
+                    </div>
+                </form>
+            </div>
+            @endcan
+
+            {{-- Recording Enforcement --}}
+            @can('telemarketing.manage-recording-mode')
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Recording Enforcement</h3>
+                <p class="text-sm text-gray-500 mb-4">When enabled, agents must have a call recording attached before they can save a call log. Dispositions marked as exempt (e.g., No Answer) can be saved without a recording.</p>
+                <form method="POST" action="{{ route('settings.telemarketing.update') }}">
+                    @csrf
+                    @method('PUT')
+                    {{-- Pass existing settings so they don't get wiped --}}
+                    <input type="hidden" name="auto_call_enabled" value="{{ $settings->auto_call_enabled ? '1' : '0' }}">
+                    <input type="hidden" name="auto_call_delay" value="{{ $settings->auto_call_delay }}">
+                    <input type="hidden" name="queue_mode" value="{{ $settings->queue_mode }}">
+                    <input type="hidden" name="recording_mode" value="{{ $settings->recording_mode }}">
+
+                    {{-- Toggle --}}
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg mb-6">
+                        <div>
+                            <p class="text-sm font-semibold text-gray-800">Require Recording Before Save</p>
+                            <p class="text-xs text-gray-500">Agents cannot save a call log without an attached recording (unless disposition is exempt)</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="hidden" name="require_recording" value="0">
+                            <input type="checkbox" name="require_recording" value="1" class="sr-only peer" id="require_recording_toggle" {{ $settings->require_recording ? 'checked' : '' }}>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                        </label>
+                    </div>
+
+                    {{-- Enforcement Details (shown when toggle is on) --}}
+                    <div id="enforcement-details" class="{{ $settings->require_recording ? '' : 'hidden' }}">
+                        {{-- Upload Timeout --}}
+                        <div class="mb-6">
+                            <label for="recording_upload_timeout" class="block text-sm font-medium text-gray-700 mb-1">Auto-Upload Timeout</label>
+                            <p class="text-xs text-gray-500 mb-2">How long to wait for the auto-upload to complete before showing the manual upload option.</p>
+                            <select name="recording_upload_timeout" id="recording_upload_timeout" class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                                <option value="15" {{ $settings->recording_upload_timeout == 15 ? 'selected' : '' }}>15 seconds</option>
+                                <option value="30" {{ $settings->recording_upload_timeout == 30 ? 'selected' : '' }}>30 seconds</option>
+                                <option value="45" {{ $settings->recording_upload_timeout == 45 ? 'selected' : '' }}>45 seconds</option>
+                                <option value="60" {{ $settings->recording_upload_timeout == 60 ? 'selected' : '' }}>60 seconds</option>
+                            </select>
+                        </div>
+
+                        {{-- Exempt Dispositions --}}
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Exempt Dispositions</label>
+                            <p class="text-xs text-gray-500 mb-3">Select dispositions that do NOT require a recording (e.g., when there was no actual conversation).</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                @php
+                                    $exemptIds = $settings->recording_exempt_dispositions ?? [];
+                                @endphp
+                                @foreach($systemDispositions as $disp)
+                                <label class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition">
+                                    <input type="checkbox"
+                                           name="recording_exempt_dispositions[]"
+                                           value="{{ $disp->id }}"
+                                           class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                                           {{ in_array($disp->id, $exemptIds) ? 'checked' : '' }}>
+                                    <div class="ml-3">
+                                        <p class="text-sm font-medium text-gray-800">{{ $disp->name }}</p>
+                                        @if($disp->is_final)
+                                        <span class="text-[10px] text-gray-400">(Final)</span>
+                                        @endif
+                                    </div>
+                                </label>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition">
+                            Save Recording Enforcement
+                        </button>
+                    </div>
+                </form>
+            </div>
+            @endcan
+
             {{-- Disposition Mapping --}}
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
                 <div class="flex items-center justify-between mb-4">
@@ -173,6 +318,45 @@
                 warningDiv.classList.add('hidden');
             }
         });
+        // Recording mode radio button visual toggle
+        document.querySelectorAll('input[name="recording_mode"]').forEach(function(radio) {
+            radio.addEventListener('change', function() {
+                // Reset all cards
+                document.querySelectorAll('input[name="recording_mode"]').forEach(function(r) {
+                    var label = r.closest('label');
+                    var icon = label.querySelector('[class*="w-12"]');
+                    label.classList.remove('border-indigo-500', 'bg-indigo-50');
+                    label.classList.add('border-gray-200');
+                    icon.classList.remove('bg-indigo-100', 'text-indigo-600');
+                    icon.classList.add('bg-gray-100', 'text-gray-500');
+                });
+                document.getElementById('check-auto').classList.add('hidden');
+                document.getElementById('check-manual').classList.add('hidden');
+                document.getElementById('check-both').classList.add('hidden');
+                // Highlight selected
+                var selected = this.closest('label');
+                var selectedIcon = selected.querySelector('[class*="w-12"]');
+                selected.classList.remove('border-gray-200');
+                selected.classList.add('border-indigo-500', 'bg-indigo-50');
+                selectedIcon.classList.remove('bg-gray-100', 'text-gray-500');
+                selectedIcon.classList.add('bg-indigo-100', 'text-indigo-600');
+                document.getElementById('check-' + this.value).classList.remove('hidden');
+            });
+        });
+
+
+        // Recording enforcement toggle
+        var reqToggle = document.getElementById("require_recording_toggle");
+        if (reqToggle) {
+            reqToggle.addEventListener("change", function() {
+                var details = document.getElementById("enforcement-details");
+                if (this.checked) {
+                    details.classList.remove("hidden");
+                } else {
+                    details.classList.add("hidden");
+                }
+            });
+        }
         function resetToDefaults() {
             if (!confirm('Reset disposition mapping to system defaults? Your custom mapping will be removed.')) return;
 

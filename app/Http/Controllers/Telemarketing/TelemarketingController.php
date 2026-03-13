@@ -136,7 +136,11 @@ class TelemarketingController extends Controller
         // Get auto-call settings for this company
         $autoCallSettings = CompanyTelemarketingSetting::getOrCreate($companyId);
 
-        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'calledToday', 'queueCount', 'autoCallSettings'));
+        $recordingMode = $autoCallSettings->recording_mode ?? 'both';
+        $requireRecording = $autoCallSettings->require_recording ?? false;
+        $recordingUploadTimeout = $autoCallSettings->recording_upload_timeout ?? 30;
+        $exemptDispositions = $autoCallSettings->recording_exempt_dispositions ?? [];
+        return view('telemarketing.call', compact('shipment', 'dispositions', 'callHistory', 'calledToday', 'queueCount', 'autoCallSettings', 'recordingMode', 'requireRecording', 'recordingUploadTimeout', 'exemptDispositions'));
     }
 
     public function logCall(Request $request, Shipment $shipment)

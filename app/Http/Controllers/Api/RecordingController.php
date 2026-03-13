@@ -112,6 +112,11 @@ class RecordingController extends Controller
         }
 
         $companyId = $user->company_id;
+        // Check recording mode - reject auto-uploads if mode is "manual" only
+        $settings = \App\Models\CompanyTelemarketingSetting::getOrCreate($companyId);
+        if ($settings->recording_mode === "manual") {
+            return response()->json(["error" => "Auto-upload is disabled. Recording mode is set to manual only."], 403);
+        }
         $file = $request->file('recording');
 
         // Try to find the matching telemarketing log (draft or completed)
@@ -258,13 +263,34 @@ class RecordingController extends Controller
             }
         }
 
-        // 3. Try by phone number + recent time (within last 15 minutes)
+        // 2.5. Try by phone number on DRAFT logs (no time limit - draft means still active)
+        if ($request->filled('phone_number')) {
+            $cleanPhone2 = preg_replace('/[^0-9]/', '', $request->phone_number);
+            $log = TelemarketingLog::where('user_id', $userId)
+                ->where('status', 'draft')
+                ->whereNull('recording_path')
+                ->where(function ($q) use ($cleanPhone2) {
+                    $q->where('phone_called', 'LIKE', '%' . substr($cleanPhone2, -10) . '%')
+                      ->orWhereHas('shipment', function ($sq) use ($cleanPhone2) {
+                          $sq->where('consignee_phone_1', 'LIKE', '%' . substr($cleanPhone2, -10) . '%')
+                              ->orWhere('consignee_phone_2', 'LIKE', '%' . substr($cleanPhone2, -10) . '%');
+                      });
+                })
+                ->orderBy('created_at', 'desc')
+                ->first();
+            if ($log) {
+                Log::info('Recording matched by phone number (draft, no time limit)', ['log_id' => $log->id]);
+                return $log;
+            }
+        }
+
+        // 3. Try by phone number + recent time (within last 2 hours)
         if ($request->filled('phone_number')) {
             $cleanPhone = preg_replace('/[^0-9]/', '', $request->phone_number);
-            $fifteenMinutesAgo = now()->subMinutes(15);
+            $timeWindow = now()->subHours(2);
 
             $log = TelemarketingLog::where('user_id', $userId)
-                ->where('created_at', '>=', $fifteenMinutesAgo)
+                ->where('created_at', '>=', $timeWindow)
                 ->whereNull('recording_path')
                 ->where(function ($q) use ($cleanPhone) {
                     $q->where('phone_called', 'LIKE', '%' . substr($cleanPhone, -10) . '%')
@@ -281,9 +307,9 @@ class RecordingController extends Controller
             }
         }
 
-        // 4. Last resort: most recent log by this user without a recording (within last 15 minutes)
+        // 4. Last resort: most recent log by this user without a recording (within last 2 hours)
         $log = TelemarketingLog::where('user_id', $userId)
-            ->where('created_at', '>=', now()->subMinutes(15))
+            ->where('created_at', '>=', now()->subHours(2))
             ->whereNull('recording_path')
             ->orderBy('created_at', 'desc')
             ->first();
@@ -294,4 +320,97 @@ class RecordingController extends Controller
 
         return $log;
     }
+
+    /**
+     * Check if a recording exists for a shipment (used by enforcement JS).
+     */
+    public function checkRecording(Request $request, int $shipment)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Check if any log for this shipment by this user has a recording linked
+        $hasRecording = TelemarketingLog::where('shipment_id', $shipment)
+            ->where('user_id', $user->id)
+            ->where(function ($q) {
+                $q->whereNotNull('recording_path')
+                  ->orWhereNotNull('recording_url');
+            })
+            ->exists();
+
+        // Also check draft logs
+        $draftLog = TelemarketingLog::where('shipment_id', $shipment)
+            ->where('user_id', $user->id)
+            ->where('status', 'draft')
+            ->latest()
+            ->first();
+
+        $draftHasRecording = false;
+        if ($draftLog) {
+            $draftHasRecording = !empty($draftLog->recording_path) || !empty($draftLog->recording_url);
+        }
+
+        // Check for unlinked recordings: recordings uploaded by this user
+        // that were not matched to any log (saved to disk but log_id is null)
+        // Match by checking if any recording file exists for this user uploaded
+        // after the draft log was created (call_started_at or created_at)
+        $hasUnlinkedRecording = false;
+        if ($draftLog && !$draftHasRecording && !$hasRecording) {
+            $shipmentModel = \App\Models\Shipment::find($shipment);
+            if ($shipmentModel) {
+                $phones = array_filter([
+                    $shipmentModel->consignee_phone_1,
+                    $shipmentModel->consignee_phone_2,
+                    $draftLog->phone_called,
+                ]);
+
+                // Check if there are any OTHER logs by this user that have recordings
+                // but are not linked to any shipment (orphaned recordings)
+                // These are logs where the upload happened but matching failed
+                $referenceTime = $draftLog->call_started_at ?? $draftLog->created_at;
+
+                // Look for any recording files uploaded by this user after the call started
+                // that are not linked to any finalized log
+                $hasUnlinkedRecording = TelemarketingLog::where('user_id', $user->id)
+                    ->whereNotNull('recording_path')
+                    ->where('created_at', '>=', $referenceTime)
+                    ->where('shipment_id', $shipment)
+                    ->exists();
+
+                // Also check: any log by this user with recording, created after reference time,
+                // that might have been saved without proper shipment linking
+                if (!$hasUnlinkedRecording) {
+                    // Check the recordings directory for files by this user after the call
+                    $companyId = $user->company_id;
+                    $recordingsDir = storage_path("app/recordings/{$companyId}");
+                    if (is_dir($recordingsDir)) {
+                        $referenceTimestamp = strtotime($referenceTime);
+                        $files = glob($recordingsDir . "/*_{$user->id}*");
+                        foreach ($files as $file) {
+                            if (filemtime($file) >= $referenceTimestamp) {
+                                $hasUnlinkedRecording = true;
+                                // Try to link this recording to the draft log
+                                $relativePath = "recordings/{$companyId}/" . basename($file);
+                                $draftLog->update(['recording_path' => $relativePath]);
+                                Log::info('Linked orphaned recording to draft log', [
+                                    'log_id' => $draftLog->id,
+                                    'recording_path' => $relativePath,
+                                ]);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return response()->json([
+            'has_recording' => $hasRecording || $draftHasRecording || $hasUnlinkedRecording,
+            'draft_log_id' => $draftLog?->id,
+            'draft_has_recording' => $draftHasRecording || $hasUnlinkedRecording,
+        ]);
+    }
+
 }

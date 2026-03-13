@@ -23,6 +23,7 @@
         'telemarketing.view-queue' => 'View Call Queue',
         'telemarketing.log-call' => 'Log Calls',
         'telemarketing.view-all-logs' => 'View All Call Logs',
+        'telemarketing.manage-recording-mode' => 'Manage Recording Mode',
         // Users
         'users.view' => 'View Users',
         'users.create' => 'Create Users',

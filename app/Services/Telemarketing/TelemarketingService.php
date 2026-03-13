@@ -835,6 +835,39 @@ class TelemarketingService
             ? \App\Models\ShipmentStatus::whereIn('id', $allowedStatusIds)->pluck('name')->toArray()
             : ['All Statuses'];
 
+        // Pending in queue (assigned but not yet called today / still needs follow-up)
+        $pendingInQueue = (clone $baseQuery)
+            ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
+            ->where(function ($q) {
+                $q->where('telemarketing_status', 'pending')
+                  ->orWhere('telemarketing_status', 'in_progress');
+            })
+            ->count();
+
+        // Confirmation rate today (confirmed / total calls with final disposition today)
+        $confirmedToday = TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $today)
+            ->whereHas('disposition', fn ($q) => $q->where('name', 'like', '%Accept%')->orWhere('name', 'like', '%Confirm%'))
+            ->count();
+        $confirmationRate = $callsToday > 0 ? round(($confirmedToday / $callsToday) * 100, 1) : 0;
+
+        // Average calls per day this week
+        $weekStart = now()->startOfWeek();
+        $daysWorked = TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $weekStart)
+            ->select(DB::raw('DATE(created_at) as call_date'))
+            ->groupBy('call_date')
+            ->get()
+            ->count();
+        $totalCallsThisWeek = TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $weekStart)
+            ->count();
+        $avgCallsPerDay = $daysWorked > 0 ? round($totalCallsThisWeek / $daysWorked) : 0;
+
+        // Daily target progress (calls today vs total assigned as rough target)
+        $dailyTarget = $totalAssigned > 0 ? min($totalAssigned, 100) : 100; // Cap at 100 as reasonable daily target
+        $progressPercent = $dailyTarget > 0 ? min(round(($callsToday / $dailyTarget) * 100, 1), 100) : 0;
+
         return [
             'total_assigned' => $totalAssigned,
             'calls_today' => $callsToday,
@@ -843,6 +876,12 @@ class TelemarketingService
             'never_contacted' => $neverContacted,
             'disposition_breakdown' => $dispositionBreakdown,
             'assigned_statuses' => $assignedStatuses,
+            'pending_in_queue' => $pendingInQueue,
+            'confirmed_today' => $confirmedToday,
+            'confirmation_rate' => $confirmationRate,
+            'avg_calls_per_day' => $avgCallsPerDay,
+            'total_calls_this_week' => $totalCallsThisWeek,
+            'progress_percent' => $progressPercent,
         ];
     }
 

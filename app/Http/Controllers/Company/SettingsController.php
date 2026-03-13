@@ -55,26 +55,38 @@ class SettingsController extends Controller
         // If company has no custom mapping, use defaults as current
         $currentMapping = !empty($companyMapping) ? $companyMapping : $defaultMapping;
 
-        return view('settings.telemarketing', compact('settings', 'statuses', 'dispositions', 'currentMapping', 'defaultMapping'));
+        $systemDispositions = TelemarketingDisposition::whereNull("company_id")->orderBy("id")->get();
+        return view("settings.telemarketing", compact("settings", "statuses", "dispositions", "currentMapping", "defaultMapping", "systemDispositions"));
     }
 
-    public function updateTelemarketingSettings(Request $request)
+public function updateTelemarketingSettings(Request $request)
     {
         $request->validate([
             'auto_call_enabled' => 'required|boolean',
             'auto_call_delay' => 'required|integer|in:3,5,7,10,15',
             'queue_mode' => 'required|in:pre_assigned,shared_queue,hybrid',
+            'recording_mode' => 'required|in:auto,manual,both',
+            'require_recording' => 'nullable|boolean',
+            'recording_upload_timeout' => 'nullable|integer|in:15,30,45,60',
+            'recording_exempt_dispositions' => 'nullable|array',
+            'recording_exempt_dispositions.*' => 'integer|exists:telemarketing_dispositions,id',
         ]);
-
         $companyId = $request->user()->company_id;
         $settings = CompanyTelemarketingSetting::getOrCreate($companyId);
-        $settings->update([
+        $updateData = [
             'auto_call_enabled' => $request->auto_call_enabled,
             'auto_call_delay' => $request->auto_call_delay,
             'queue_mode' => $request->queue_mode,
-        ]);
-
-        return redirect()->route('settings.telemarketing')->with('success', 'Auto-call settings updated successfully.');
+            'recording_mode' => $request->recording_mode,
+        ];
+        // Only update recording enforcement fields if they are present in the request
+        if ($request->has('require_recording')) {
+            $updateData['require_recording'] = $request->boolean('require_recording');
+            $updateData['recording_upload_timeout'] = $request->input('recording_upload_timeout', 30);
+            $updateData['recording_exempt_dispositions'] = $request->input('recording_exempt_dispositions', []);
+        }
+        $settings->update($updateData);
+        return redirect()->route('settings.telemarketing')->with('success', 'Telemarketing settings updated successfully.');
     }
 
     public function updateDispositionMapping(Request $request)

@@ -239,6 +239,7 @@
                                 </div>
 
                                 {{-- Recording Status (shown when using Android app) --}}
+                                @if(($recordingMode ?? 'both') !== 'manual')
                                 <div id="recording-status" class="mb-4 hidden">
                                     <div class="flex items-center space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                                         <svg class="w-5 h-5 text-green-600 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
@@ -247,12 +248,13 @@
                                         <span id="recording-status-text" class="text-sm text-green-700 font-medium">Call recording will be auto-uploaded</span>
                                     </div>
                                 </div>
+                                @endif
 
                                 {{-- Hidden call duration field --}}
                                 <input type="hidden" name="call_duration_seconds" id="call_duration_seconds" value="">
 
                                 {{-- Manual Recording Upload --}}
-                                <div class="mb-4 p-4 bg-orange-50 border-2 border-orange-300 rounded-lg">
+                                <div id="manual-upload-section" class="mb-4 p-4 bg-orange-50 border-2 border-orange-300 rounded-lg @if(($recordingMode ?? "both") === "auto") hidden @endif">
                                     <div class="flex items-center justify-between mb-2">
                                         <h4 class="text-sm font-semibold text-orange-800">
                                             <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100 0h-3v-2.07z" clip-rule="evenodd"></path></svg>
@@ -535,8 +537,10 @@
         }
 
         // Detect if running inside TeleSMS Android app
-        if (typeof TeleSMSBridge !== 'undefined') {
-            document.getElementById('recording-status').classList.remove('hidden');
+        var recordingMode = '{{ $recordingMode ?? "both" }}';
+        if (typeof TeleSMSBridge !== 'undefined' && recordingMode !== 'manual') {
+            var recordingStatusEl = document.getElementById('recording-status');
+            if (recordingStatusEl) recordingStatusEl.classList.remove('hidden');
 
             // Notify the Android app about the current shipment for recording matching
             try {
@@ -660,6 +664,244 @@
             })
             .catch(function(err) { console.log('Call history poll error:', err); });
         }, 15000);
+    </script>
+    <script>
+        // ── Recording Enforcement Logic ──
+        var requireRecording = {{ $requireRecording ? 'true' : 'false' }};
+        var recordingUploadTimeout = {{ $recordingUploadTimeout ?? 30 }};
+        var exemptDispositions = @json($exemptDispositions ?? []);
+        var enforcementActive = false;
+        var skipEnforcement = false;
+        var recordingCheckInterval = null;
+        var enforcementTimeoutTimer = null;
+        var recordingFound = false;
+        var manualFileSelected = false;
+
+        if (requireRecording) {
+            // Override form submit to check recording enforcement
+            document.getElementById('call-form').addEventListener('submit', function(e) {
+                if (!requireRecording) return;
+
+                var dispVal = document.getElementById('disposition_id').value;
+                if (!dispVal) return;
+
+                // Check if disposition is exempt
+                var isExempt = exemptDispositions.map(String).indexOf(String(dispVal)) !== -1;
+                if (isExempt) {
+                    hideEnforcementOverlay();
+                    return;
+                }
+
+                // Check if recording exists or enforcement was skipped
+                if (recordingFound || manualFileSelected || skipEnforcement) {
+                    hideEnforcementOverlay();
+                    return;
+                }
+
+                // Block save
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                showEnforcementOverlay();
+            }, true);
+
+            // Monitor manual file input
+            var callRecordingInput = document.getElementById('call_recording');
+            if (callRecordingInput) {
+                callRecordingInput.addEventListener('change', function() {
+                    if (this.files && this.files.length > 0) {
+                        manualFileSelected = true;
+                        hideEnforcementOverlay();
+                        enableSaveButtons();
+                    } else {
+                        manualFileSelected = false;
+                    }
+                });
+            }
+        }
+
+        function showEnforcementOverlay() {
+            enforcementActive = true;
+            var overlay = document.getElementById('enforcement-overlay');
+            if (!overlay) {
+                createEnforcementOverlay();
+                overlay = document.getElementById('enforcement-overlay');
+            }
+            overlay.classList.remove('hidden');
+            disableSaveButtons();
+            startRecordingCheck();
+            startEnforcementTimeout();
+        }
+
+        function hideEnforcementOverlay() {
+            enforcementActive = false;
+            var overlay = document.getElementById('enforcement-overlay');
+            if (overlay) overlay.classList.add('hidden');
+            stopRecordingCheck();
+            stopEnforcementTimeout();
+        }
+
+        function createEnforcementOverlay() {
+            var formEl = document.getElementById('call-form');
+            var div = document.createElement('div');
+            div.id = 'enforcement-overlay';
+            div.className = 'mt-4 p-4 bg-amber-50 border-2 border-amber-400 rounded-lg';
+            div.innerHTML = '<div class="flex items-start">'
+                + '<svg class="w-6 h-6 text-amber-500 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>'
+                + '<div class="flex-1">'
+                + '<p class="text-sm font-semibold text-amber-800">Recording Required</p>'
+                + '<p id="enforcement-status-text" class="text-sm text-amber-700 mt-1">Waiting for auto-upload to complete...</p>'
+                + '<div id="enforcement-countdown" class="mt-2">'
+                + '<div class="flex items-center">'
+                + '<div class="w-full bg-amber-200 rounded-full h-2 mr-3">'
+                + '<div id="enforcement-progress" class="bg-amber-500 h-2 rounded-full transition-all duration-1000" style="width: 100%"></div>'
+                + '</div>'
+                + '<span id="enforcement-timer" class="text-xs font-mono text-amber-600 whitespace-nowrap">' + recordingUploadTimeout + 's</span>'
+                + '</div>'
+                + '</div>'
+                + '<div id="enforcement-manual-prompt" class="hidden mt-3">'
+                + '<p class="text-sm text-red-700 font-medium">Auto-upload timed out. Please upload the recording manually or save without recording.</p>'
+                + '<button type="button" id="save-without-recording-btn" onclick="saveWithoutRecording()" class="mt-3 inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition shadow-sm">'
+                + '<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>'
+                + 'Save Without Recording'
+                + '</button>'
+                + '</div>'
+                + '</div>'
+                + '</div>';
+
+            var saveButtons = formEl.querySelector('.flex.justify-end.space-x-3');
+            if (saveButtons) {
+                saveButtons.parentNode.insertBefore(div, saveButtons);
+            } else {
+                formEl.appendChild(div);
+            }
+        }
+
+        function disableSaveButtons() {
+            var buttons = document.querySelectorAll('#call-form button[type="submit"]');
+            buttons.forEach(function(btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+        }
+
+        function enableSaveButtons() {
+            var buttons = document.querySelectorAll('#call-form button[type="submit"]');
+            buttons.forEach(function(btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+        }
+
+        function startRecordingCheck() {
+            stopRecordingCheck();
+            recordingCheckInterval = setInterval(function() {
+                fetch('/api/telemarketing/check-recording/{{ $shipment->id }}', {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json',
+                    },
+                    credentials: 'same-origin'
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.has_recording) {
+                        recordingFound = true;
+                        hideEnforcementOverlay();
+                        enableSaveButtons();
+                    }
+                })
+                .catch(function(err) {
+                    console.log('Recording check error:', err);
+                });
+            }, 3000);
+        }
+
+        function stopRecordingCheck() {
+            if (recordingCheckInterval) {
+                clearInterval(recordingCheckInterval);
+                recordingCheckInterval = null;
+            }
+        }
+
+        var enforcementSecondsLeft = 0;
+
+        function startEnforcementTimeout() {
+            stopEnforcementTimeout();
+            enforcementSecondsLeft = recordingUploadTimeout;
+            updateEnforcementTimer();
+
+            enforcementTimeoutTimer = setInterval(function() {
+                enforcementSecondsLeft--;
+                updateEnforcementTimer();
+
+                if (enforcementSecondsLeft <= 0) {
+                    stopEnforcementTimeout();
+                    showManualUploadPrompt();
+                }
+            }, 1000);
+        }
+
+        function stopEnforcementTimeout() {
+            if (enforcementTimeoutTimer) {
+                clearInterval(enforcementTimeoutTimer);
+                enforcementTimeoutTimer = null;
+            }
+        }
+
+        function updateEnforcementTimer() {
+            var timerEl = document.getElementById('enforcement-timer');
+            var progressEl = document.getElementById('enforcement-progress');
+            if (timerEl) timerEl.textContent = enforcementSecondsLeft + 's';
+            if (progressEl) {
+                var pct = (enforcementSecondsLeft / recordingUploadTimeout) * 100;
+                progressEl.style.width = pct + '%';
+            }
+        }
+
+        function saveWithoutRecording() {
+            skipEnforcement = true;
+            // Add a hidden input to flag that recording was skipped
+            var hiddenInput = document.getElementById('missing_recording_flag');
+            if (!hiddenInput) {
+                hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'missing_recording';
+                hiddenInput.id = 'missing_recording_flag';
+                hiddenInput.value = '1';
+                document.getElementById('call-form').appendChild(hiddenInput);
+            }
+            hideEnforcementOverlay();
+            enableSaveButtons();
+            // Auto-click the save & next call button
+            var saveNextBtn = document.querySelector('button[name="action"][value="save_next"]');
+            if (saveNextBtn) {
+                saveNextBtn.click();
+            }
+        }
+        function showManualUploadPrompt() {
+            var statusText = document.getElementById('enforcement-status-text');
+            if (statusText) statusText.textContent = 'Auto-upload timed out or failed.';
+
+            var countdown = document.getElementById('enforcement-countdown');
+            if (countdown) countdown.classList.add('hidden');
+
+            var manualPrompt = document.getElementById('enforcement-manual-prompt');
+            if (manualPrompt) manualPrompt.classList.remove('hidden');
+
+            // Make the manual upload section visible if it was hidden (auto mode)
+            var uploadSections = document.querySelectorAll('#call_recording');
+            uploadSections.forEach(function(el) {
+                var section = el.closest('.mb-4');
+                if (section) section.classList.remove('hidden');
+                // Also show parent containers
+                var grandparent = section ? section.parentElement : null;
+                if (grandparent) grandparent.classList.remove('hidden');
+            });
+
+            // Enable save buttons so agent can upload and save
+            enableSaveButtons();
+        }
+
     </script>
     @endpush
 </x-app-layout>

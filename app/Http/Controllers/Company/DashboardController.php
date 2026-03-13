@@ -22,6 +22,11 @@ class DashboardController extends Controller
         if ($user->hasRole("SMS Operator")) {
             return redirect()->route("sms.blast.dashboard");
         }
+
+        // Redirect Telemarketers to their telemarketing dashboard
+        if ($user->hasRole("Telemarketer")) {
+            return redirect()->route("telemarketing.dashboard");
+        }
         $companyId = $user->company_id;
         $timezone = 'Asia/Manila';
 

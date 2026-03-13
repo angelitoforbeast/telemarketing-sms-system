@@ -104,6 +104,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Create draft log when user clicks call button (used by Android app + WebView JS)
         Route::post('/api/telemarketing/create-draft-log', [RecordingController::class, 'createDraftLog'])->name('api.telemarketing.create-draft-log');
+        Route::get("/api/telemarketing/check-recording/{shipment}", [RecordingController::class, "checkRecording"])->name("api.telemarketing.check-recording");
         Route::get("/api/telemarketing/call-history/{shipment}", [TelemarketingController::class, "callHistoryApi"])->name("api.telemarketing.call-history");
 
         // SMS Campaigns
