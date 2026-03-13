@@ -937,6 +937,7 @@
             processDate: new Date().toISOString().split('T')[0],
             orderNotes: '',
             submitting: false,
+            showErrors: false,
 
             get totalAmount() {
                 return this.items.reduce(function(sum, item) {
@@ -1062,10 +1063,17 @@
                 this.items = [{ item_name: '', quantity: 1, unit_price: 0 }];
                 this.processDate = this.todayStr;
                 this.orderNotes = '';
+                this.showErrors = false;
                 document.getElementById('order-status-msg').textContent = '';
                 document.getElementById('order-success-area').classList.add('hidden');
             },
 
+            trySubmit() {
+                this.showErrors = true;
+                if (this.isValid) {
+                    this.submitOrder();
+                }
+            },
             submitOrder() {
                 if (this.submitting || !this.isValid) return;
                 this.submitting = true;
