@@ -26,6 +26,11 @@ class TelemarketingLog extends Model
         'ai_summary',
         'ai_analyzed_at',
         'ai_disposition_id',
+        'ai_sentiment',
+        'ai_agent_score',
+        'ai_customer_intent',
+        'ai_key_issues',
+        'ai_action_items',
     ];
 
     protected $casts = [

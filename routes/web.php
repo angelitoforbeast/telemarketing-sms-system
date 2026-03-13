@@ -96,6 +96,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::delete('/telemarketing/dispositions/{disposition}', [TelemarketingController::class, 'deleteDisposition'])->name('telemarketing.delete-disposition');
             Route::get('/telemarketing/call-logs', [TelemarketingController::class, 'callLogs'])->name('telemarketing.call-logs');
             Route::post('/telemarketing/analyze-call/{log}', [TelemarketingController::class, 'analyzeCall'])->name('telemarketing.analyze-call');
+            Route::post('/telemarketing/analyze-all-unanalyzed', [TelemarketingController::class, 'analyzeAllUnanalyzed'])->name('telemarketing.analyze-all-unanalyzed');
             Route::post('/telemarketing/transition-rules', [TelemarketingController::class, 'storeTransitionRule'])->name('telemarketing.store-transition-rule');
             Route::post('/telemarketing/transition-rules/{transitionRule}/toggle', [TelemarketingController::class, 'toggleTransitionRule'])->name('telemarketing.toggle-transition-rule');
             Route::delete('/telemarketing/transition-rules/{transitionRule}', [TelemarketingController::class, 'deleteTransitionRule'])->name('telemarketing.delete-transition-rule');

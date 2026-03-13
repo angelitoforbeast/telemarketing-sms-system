@@ -805,6 +805,66 @@ class TelemarketingController extends Controller
         return back()->with('error', $result['message']);
     }
 
+
+    /**
+     * Queue all unanalyzed recordings for AI analysis (CEO/Owner only).
+     */
+    public function analyzeAllUnanalyzed(Request $request)
+    {
+        $user = auth()->user();
+
+        // Only CEO, Company Owner, or Platform Admin can bulk analyze
+        if (!$user->hasRole('CEO') && !$user->hasRole('Company Owner') && !$user->hasRole('Platform Admin')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        // Get all unanalyzed logs with recordings
+        $query = TelemarketingLog::whereNotNull('recording_path')
+            ->where('recording_path', '!=', '')
+            ->whereNull('ai_analyzed_at');
+
+        // Company users only see their own company's logs
+        if ($user->company_id) {
+            $query->whereHas('shipment', function ($q) use ($user) {
+                $q->where('company_id', $user->company_id);
+            });
+        }
+
+        $logs = $query->get();
+        $count = $logs->count();
+
+        if ($count === 0) {
+            return response()->json(['success' => true, 'queued' => 0, 'message' => 'No unanalyzed recordings found.']);
+        }
+
+        // Process each one (synchronously for now - can be converted to queue jobs later)
+        $service = new CallAnalysisService();
+        $processed = 0;
+        $failed = 0;
+
+        foreach ($logs as $log) {
+            try {
+                $result = $service->analyze($log);
+                if ($result['success']) {
+                    $processed++;
+                } else {
+                    $failed++;
+                }
+            } catch (\Exception $e) {
+                $failed++;
+                \Illuminate\Support\Facades\Log::error('Bulk analyze failed for log ' . $log->id, ['error' => $e->getMessage()]);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'queued' => $count,
+            'processed' => $processed,
+            'failed' => $failed,
+            'message' => "Analyzed {$processed} recordings" . ($failed > 0 ? " ({$failed} failed)" : ''),
+        ]);
+    }
+
     // ────────────────────────────────────────────────────────────────
     //  HELPERS
     // ────────────────────────────────────────────────────────────────

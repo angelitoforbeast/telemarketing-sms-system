@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class CallAnalysisService
 {
     /**
-     * Analyze a call recording: transcribe + reformat as dialogue + summarize + AI disposition.
+     * Analyze a call recording: transcribe + reformat as dialogue + summarize + AI disposition + extended analysis.
      *
      * @param TelemarketingLog $log
      * @return array ['success' => bool, 'message' => string]
@@ -45,18 +45,23 @@ class CallAnalysisService
             // 5. Get available dispositions from DB (for the log's company or system-wide)
             $dispositions = $this->getAvailableDispositions($log);
 
-            // 6. Send raw transcription to GPT for dialogue reformat + summary + disposition (one API call)
+            // 6. Send raw transcription to GPT for full analysis (one API call)
             $result = $this->reformatAndSummarize($rawTranscription, $analysisPrompt, $dispositions);
 
             // 7. Resolve disposition ID from the AI's chosen disposition name
             $aiDispositionId = $this->resolveDispositionId($result['disposition'], $dispositions);
 
-            // 8. Save results
+            // 8. Save results (including new analysis fields)
             $log->update([
                 'transcription' => $result['dialogue'],
                 'ai_summary' => $result['summary'],
                 'ai_analyzed_at' => now(),
                 'ai_disposition_id' => $aiDispositionId,
+                'ai_sentiment' => $result['sentiment'] ?? null,
+                'ai_agent_score' => $result['agent_score'] ?? null,
+                'ai_customer_intent' => $result['customer_intent'] ?? null,
+                'ai_key_issues' => $result['key_issues'] ?? null,
+                'ai_action_items' => $result['action_items'] ?? null,
             ]);
 
             // 9. Clean up temp file if we created one
@@ -227,8 +232,8 @@ class CallAnalysisService
     }
 
     /**
-     * Send raw transcription to GPT for dialogue reformatting, summary, AND disposition in one API call.
-     * Returns ['dialogue' => string, 'summary' => string, 'disposition' => string]
+     * Send raw transcription to GPT for dialogue reformatting, summary, disposition, AND extended analysis in one API call.
+     * Returns ['dialogue' => string, 'summary' => string, 'disposition' => string, 'sentiment' => string, 'agent_score' => int, 'customer_intent' => string, 'key_issues' => string, 'action_items' => string]
      */
     protected function reformatAndSummarize(string $rawTranscription, string $analysisPrompt, array $dispositions): array
     {
@@ -240,7 +245,7 @@ class CallAnalysisService
         $dispositionList = implode("\n", array_map(fn($name) => "- {$name}", $dispositionNames));
 
         $systemPrompt = <<<PROMPT
-You are an AI assistant that processes telemarketing call transcriptions. You will receive a raw transcription from a speech-to-text system. You must do THREE things:
+You are an AI assistant that processes telemarketing call transcriptions. You will receive a raw transcription from a speech-to-text system. You must do SEVEN things:
 
 **TASK 1 - DIALOGUE REFORMAT:**
 Reformat the raw transcription into a clean, readable dialogue format. Rules:
@@ -273,8 +278,27 @@ Choose the single best matching disposition. Consider:
 - If it went to voicemail → "Voicemail"
 - If none of the above clearly applies → "Other"
 
+**TASK 4 - SENTIMENT:**
+Determine the overall sentiment of the customer during the call. Must be exactly one of: positive, neutral, negative
+
+**TASK 5 - AGENT SCORE:**
+Rate the telemarketer/agent's performance on a scale of 1-10 based on:
+- Professionalism and politeness
+- Product knowledge
+- Handling of objections
+- Call control and flow
+- Closing ability
+Output just the number (1-10).
+
+**TASK 6 - CUSTOMER INTENT:**
+Determine the primary intent of the customer. Must be exactly one of: reorder, complaint, inquiry, refusal, acceptance, callback, other
+
+**TASK 7 - KEY ISSUES & ACTION ITEMS:**
+- Key Issues: List any problems, complaints, or concerns raised during the call. Keep it brief (1-2 sentences). Write "None" if no issues.
+- Action Items: List any follow-up actions needed after this call. Keep it brief (1-2 sentences). Write "None" if no actions needed.
+
 **OUTPUT FORMAT:**
-You MUST respond in EXACTLY this format with the three sections separated by the delimiters:
+You MUST respond in EXACTLY this format with sections separated by the delimiters:
 
 ---DIALOGUE---
 (the reformatted dialogue here)
@@ -284,6 +308,21 @@ You MUST respond in EXACTLY this format with the three sections separated by the
 
 ---DISPOSITION---
 (the exact disposition name from the list above, nothing else)
+
+---SENTIMENT---
+(positive, neutral, or negative)
+
+---AGENT_SCORE---
+(number 1-10)
+
+---CUSTOMER_INTENT---
+(reorder, complaint, inquiry, refusal, acceptance, callback, or other)
+
+---KEY_ISSUES---
+(brief key issues or "None")
+
+---ACTION_ITEMS---
+(brief action items or "None")
 PROMPT;
 
         $response = Http::timeout(90)
@@ -301,7 +340,7 @@ PROMPT;
                     ],
                 ],
                 'temperature' => 0.3,
-                'max_tokens' => 2000,
+                'max_tokens' => 3000,
             ]);
 
         if (!$response->successful()) {
@@ -314,49 +353,70 @@ PROMPT;
     }
 
     /**
-     * Parse GPT response into dialogue, summary, and disposition parts.
+     * Parse GPT response into all analysis parts.
      */
     protected function parseGptResponse(string $content, string $fallbackTranscription): array
     {
-        $dialogue = $fallbackTranscription;
-        $summary = 'No summary generated.';
-        $disposition = '';
+        $result = [
+            'dialogue' => $fallbackTranscription,
+            'summary' => 'No summary generated.',
+            'disposition' => '',
+            'sentiment' => null,
+            'agent_score' => null,
+            'customer_intent' => null,
+            'key_issues' => null,
+            'action_items' => null,
+        ];
 
-        // Try to split by our delimiters
-        if (str_contains($content, '---DIALOGUE---') && str_contains($content, '---SUMMARY---')) {
-            // Extract disposition first if present
-            if (str_contains($content, '---DISPOSITION---')) {
-                $parts = explode('---DISPOSITION---', $content, 2);
-                $disposition = trim($parts[1] ?? '');
-                $content = $parts[0]; // Remove disposition part for further parsing
+        // Extract each section using delimiters
+        $sections = [
+            'action_items' => '---ACTION_ITEMS---',
+            'key_issues' => '---KEY_ISSUES---',
+            'customer_intent' => '---CUSTOMER_INTENT---',
+            'agent_score' => '---AGENT_SCORE---',
+            'sentiment' => '---SENTIMENT---',
+            'disposition' => '---DISPOSITION---',
+            'summary' => '---SUMMARY---',
+            'dialogue' => '---DIALOGUE---',
+        ];
+
+        $remaining = $content;
+
+        // Extract from bottom up to avoid delimiter conflicts
+        foreach ($sections as $key => $delimiter) {
+            if (str_contains($remaining, $delimiter)) {
+                $parts = explode($delimiter, $remaining, 2);
+                $remaining = $parts[0];
+                $value = trim($parts[1] ?? '');
+
+                if (!empty($value)) {
+                    if ($key === 'agent_score') {
+                        // Extract just the number
+                        preg_match('/(\d+)/', $value, $matches);
+                        $result[$key] = isset($matches[1]) ? min(10, max(1, (int)$matches[1])) : null;
+                    } elseif ($key === 'sentiment') {
+                        $value = strtolower(trim($value));
+                        $result[$key] = in_array($value, ['positive', 'neutral', 'negative']) ? $value : 'neutral';
+                    } elseif ($key === 'customer_intent') {
+                        $value = strtolower(trim($value));
+                        $allowed = ['reorder', 'complaint', 'inquiry', 'refusal', 'acceptance', 'callback', 'other'];
+                        $result[$key] = in_array($value, $allowed) ? $value : 'other';
+                    } else {
+                        $result[$key] = $value;
+                    }
+                }
             }
-
-            // Extract dialogue and summary
-            $parts = explode('---SUMMARY---', $content, 2);
-            $dialoguePart = str_replace('---DIALOGUE---', '', $parts[0]);
-            $summaryPart = $parts[1] ?? '';
-
-            $dialogue = trim($dialoguePart);
-            $summary = trim($summaryPart);
-        } else {
-            // Fallback: if GPT didn't follow format, use entire response as summary
-            // and keep raw transcription as dialogue
-            $summary = trim($content);
         }
 
         // Ensure we have content
-        if (empty($dialogue)) {
-            $dialogue = $fallbackTranscription;
+        if (empty($result['dialogue'])) {
+            $result['dialogue'] = $fallbackTranscription;
         }
-        if (empty($summary)) {
-            $summary = 'No summary generated.';
+        if (empty($result['summary'])) {
+            $result['summary'] = 'No summary generated.';
         }
 
-        return [
-            'dialogue' => $dialogue,
-            'summary' => $summary,
-            'disposition' => $disposition,
-        ];
+        return $result;
     }
 
     /**
