@@ -45,8 +45,11 @@ class CallAnalysisService
             // 5. Get available dispositions from DB (for the log's company or system-wide)
             $dispositions = $this->getAvailableDispositions($log);
 
+            // 5b. Get shipment context for smarter AI disposition
+            $shipmentContext = $this->getShipmentContext($log);
+
             // 6. Send raw transcription to GPT for full analysis (one API call)
-            $result = $this->reformatAndSummarize($rawTranscription, $analysisPrompt, $dispositions);
+            $result = $this->reformatAndSummarize($rawTranscription, $analysisPrompt, $dispositions, $shipmentContext);
 
             // 7. Resolve disposition ID from the AI's chosen disposition name
             $aiDispositionId = $this->resolveDispositionId($result['disposition'], $dispositions);
@@ -235,7 +238,7 @@ class CallAnalysisService
      * Send raw transcription to GPT for dialogue reformatting, summary, disposition, AND extended analysis in one API call.
      * Returns ['dialogue' => string, 'summary' => string, 'disposition' => string, 'sentiment' => string, 'agent_score' => int, 'customer_intent' => string, 'key_issues' => string, 'action_items' => string]
      */
-    protected function reformatAndSummarize(string $rawTranscription, string $analysisPrompt, array $dispositions): array
+    protected function reformatAndSummarize(string $rawTranscription, string $analysisPrompt, array $dispositions, string $shipmentContext = ''): array
     {
         $apiKey = config('services.openai.api_key', env('OPENAI_API_KEY'));
         $baseUrl = config('services.openai.base_url', env('OPENAI_BASE_URL', 'https://api.openai.com/v1'));
@@ -261,22 +264,26 @@ Reformat the raw transcription into a clean, readable dialogue format. Rules:
 **TASK 2 - SUMMARY:**
 {$analysisPrompt}
 
+**CALL CONTEXT:**
+{$shipmentContext}
+
 **TASK 3 - DISPOSITION:**
-Based on the conversation, determine the most appropriate call disposition from the following options:
+Based on the conversation AND the call context above, determine the most appropriate call disposition from the following options:
 {$dispositionList}
 
-Choose the single best matching disposition. Consider:
-- If the customer agreed to accept delivery → "Answered - Will Accept"
-- If the customer wants redelivery → "Answered - Request Redeliver"
-- If the customer refused or wants to return → "Answered - Refused / RTS"
-- If the customer asked to be called back later → "Answered - Callback Requested"
-- If the customer expressed interest in reordering → "Answered - Reorder Interest"
-- If no one answered → "No Answer"
-- If the line was busy → "Busy"
-- If it was a wrong number → "Wrong Number"
-- If the number was not in service → "Not in Service"
-- If it went to voicemail → "Voicemail"
-- If none of the above clearly applies → "Other"
+Choose the single best matching disposition using these STRICT rules:
+- "Answered - Reorder Interest" → Use when the customer is a RETURNING/EXISTING customer who shows interest in or agrees to buy/order again. This includes accepting promotional offers, buy-one-take-one deals, or any new purchase by a customer who has previously received products. This is the MOST COMMON disposition for Delivered shipments.
+- "Answered - Will Accept" → Use ONLY when the customer agrees to ACCEPT A PENDING DELIVERY (e.g., a returned/for-return shipment they now agree to receive). Do NOT use this for returning customers agreeing to reorder.
+- "Answered - Request Redeliver" → Use when the customer wants a PREVIOUSLY FAILED or RETURNED delivery to be sent again to them.
+- "Answered - Refused / RTS" → Use ONLY when the customer CLEARLY and EXPLICITLY refuses the offer or requests return to sender. Do NOT use for undecided, hesitant, or "I'll think about it" responses.
+- "Answered - Callback Requested" → Use when the customer or someone on their behalf asks to be called back later. This includes: target person not available, "I'll think about it and you call me back", "my spouse/child handles this, they're not here", "I have no cash right now, call later".
+- "Answered - Call ended" → Use ONLY as a last resort when a real conversation happened but NO other disposition clearly fits. Do NOT use this for short/no-response calls.
+- "No Answer" → No one answered or responded to the call, OR the call connected but there was no meaningful response/conversation.
+- "Busy" → Line was busy, could not connect.
+- "Wrong Number" → Reached the wrong person entirely.
+- "Not in Service" → Number is not in service or disconnected.
+- "Voicemail" → Reached voicemail.
+- "Other" → Use only if absolutely none of the above categories fit.
 
 **TASK 4 - SENTIMENT:**
 Determine the overall sentiment of the customer during the call. Must be exactly one of: positive, neutral, negative
@@ -417,6 +424,45 @@ PROMPT;
         }
 
         return $result;
+    }
+
+    /**
+     * Get shipment context for the AI to understand the call purpose.
+     */
+    protected function getShipmentContext(TelemarketingLog $log): string
+    {
+        $shipment = $log->shipment;
+        if (!$shipment) {
+            return 'No shipment context available.';
+        }
+
+        // Get the shipment status name
+        $statusName = 'Unknown';
+        if ($shipment->normalized_status_id) {
+            $status = DB::table('shipment_statuses')
+                ->where('id', $shipment->normalized_status_id)
+                ->first();
+            if ($status) {
+                $statusName = $status->name;
+            }
+        }
+
+        // Map shipment status to call goal
+        $callGoalMap = [
+            'Delivered' => 'This customer previously RECEIVED and ACCEPTED their order. The purpose of this call is to offer them a REORDER or promotional deal. If the customer agrees to buy/order again, the correct disposition is "Answered - Reorder Interest" (NOT "Will Accept").',
+            'For Return' => 'This customer\'s order is currently BEING RETURNED (failed delivery or customer initially refused). The purpose of this call is to convince them to ACCEPT the delivery or arrange REDELIVERY. If they agree to accept, use "Answered - Will Accept". If they want it resent, use "Answered - Request Redeliver".',
+            'Returned' => 'This customer\'s order was RETURNED to sender. The purpose of this call is to convince them to accept a NEW delivery or place a new order. If they agree to accept redelivery, use "Answered - Will Accept" or "Answered - Request Redeliver".',
+            'Failed Delivery' => 'This customer\'s delivery FAILED. The purpose of this call is to arrange redelivery or confirm the address. If they want it resent, use "Answered - Request Redeliver".',
+            'Delivering' => 'This customer\'s order is currently BEING DELIVERED. The purpose of this call is to confirm delivery details or follow up.',
+        ];
+
+        $callGoal = $callGoalMap[$statusName] ?? 'The shipment status is "' . $statusName . '". Determine the appropriate disposition based on the conversation.';
+
+        // Get customer info
+        $customerName = $shipment->consignee_name ?? 'Unknown';
+        $attemptCount = $shipment->telemarketing_attempt_count ?? 0;
+
+        return "Customer: {$customerName}\nShipment Status: {$statusName}\nTelemarketing Attempt #: {$attemptCount}\nCall Goal: {$callGoal}";
     }
 
     /**
