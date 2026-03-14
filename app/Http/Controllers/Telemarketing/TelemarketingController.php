@@ -756,7 +756,9 @@ class TelemarketingController extends Controller
             $query->whereDoesntHave('telemarketingLogs', fn ($q) => $q->whereNotNull('recording_path')->where('recording_path', '!=', ''));
         }
 
-        $shipments = $query->paginate(25)->withQueryString();
+        $allowedPerPage = [10, 25, 50, 100];
+        $perPage = in_array((int) $request->input('per_page'), $allowedPerPage) ? (int) $request->input('per_page') : 25;
+        $shipments = $query->paginate($perPage)->withQueryString();
 
         // Eager-load all logs for the paginated shipments (with user & disposition)
         $shipmentIds = $shipments->pluck('id');

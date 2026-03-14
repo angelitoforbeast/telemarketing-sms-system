@@ -165,6 +165,45 @@
                 <div class="mt-2 text-xs text-gray-400" id="progress-detail">Preparing...</div>
             </div>
 
+            {{-- Pagination Controls (Top) --}}
+            @if($shipments->total() > 0)
+            <div class="bg-white shadow rounded-lg p-3 mb-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs text-gray-500">Show</label>
+                        <select onchange="changePerPage(this.value)" class="text-sm border-gray-300 rounded-md shadow-sm py-1 px-2">
+                            @foreach([10, 25, 50, 100] as $pp)
+                                <option value="{{ $pp }}" {{ request('per_page', 25) == $pp ? 'selected' : '' }}>{{ $pp }}</option>
+                            @endforeach
+                        </select>
+                        <span class="text-xs text-gray-500">per page</span>
+                        <span class="text-xs text-gray-400 ml-2">Showing {{ $shipments->firstItem() }}-{{ $shipments->lastItem() }} of {{ $shipments->total() }}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        @if($shipments->onFirstPage())
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded">Prev</span>
+                        @else
+                            <a href="{{ $shipments->previousPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100 transition">Prev</a>
+                        @endif
+                        @foreach($shipments->getUrlRange(max(1, $shipments->currentPage() - 2), min($shipments->lastPage(), $shipments->currentPage() + 2)) as $page => $url)
+                            @if($page == $shipments->currentPage())
+                                <span class="px-2.5 py-1 text-xs text-white bg-indigo-600 rounded font-bold">{{ $page }}</span>
+                            @else
+                                <a href="{{ $url }}" class="px-2.5 py-1 text-xs text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition">{{ $page }}</a>
+                            @endif
+                        @endforeach
+                        @if($shipments->hasMorePages())
+                            <a href="{{ $shipments->nextPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100 transition">Next</a>
+                        @else
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded">Next</span>
+                        @endif
+                        <span class="text-xs text-gray-400 ml-2">Go to</span>
+                        <input type="number" min="1" max="{{ $shipments->lastPage() }}" value="{{ $shipments->currentPage() }}" onkeydown="if(event.key==='Enter'){goToPage(this.value)}" class="w-14 text-xs border-gray-300 rounded-md shadow-sm py-1 px-2 text-center">
+                    </div>
+                </div>
+            </div>
+            @endif
+
             {{-- Call Logs Table --}}
             <div class="bg-white shadow rounded-lg overflow-hidden">
                 <div class="overflow-x-auto">
@@ -505,8 +544,44 @@
                 </div>
             </div>
 
-            {{-- Pagination --}}
-            <div class="mt-4">{{ $shipments->links() }}</div>
+            {{-- Pagination Controls (Bottom) --}}
+            @if($shipments->total() > 0)
+            <div class="bg-white shadow rounded-lg p-3 mt-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <label class="text-xs text-gray-500">Show</label>
+                        <select onchange="changePerPage(this.value)" class="text-sm border-gray-300 rounded-md shadow-sm py-1 px-2">
+                            @foreach([10, 25, 50, 100] as $pp)
+                                <option value="{{ $pp }}" {{ request('per_page', 25) == $pp ? 'selected' : '' }}>{{ $pp }}</option>
+                            @endforeach
+                        </select>
+                        <span class="text-xs text-gray-500">per page</span>
+                        <span class="text-xs text-gray-400 ml-2">Showing {{ $shipments->firstItem() }}-{{ $shipments->lastItem() }} of {{ $shipments->total() }}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        @if($shipments->onFirstPage())
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded">Prev</span>
+                        @else
+                            <a href="{{ $shipments->previousPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100 transition">Prev</a>
+                        @endif
+                        @foreach($shipments->getUrlRange(max(1, $shipments->currentPage() - 2), min($shipments->lastPage(), $shipments->currentPage() + 2)) as $page => $url)
+                            @if($page == $shipments->currentPage())
+                                <span class="px-2.5 py-1 text-xs text-white bg-indigo-600 rounded font-bold">{{ $page }}</span>
+                            @else
+                                <a href="{{ $url }}" class="px-2.5 py-1 text-xs text-gray-600 bg-gray-100 rounded hover:bg-gray-200 transition">{{ $page }}</a>
+                            @endif
+                        @endforeach
+                        @if($shipments->hasMorePages())
+                            <a href="{{ $shipments->nextPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-indigo-50 rounded hover:bg-indigo-100 transition">Next</a>
+                        @else
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded">Next</span>
+                        @endif
+                        <span class="text-xs text-gray-400 ml-2">Go to</span>
+                        <input type="number" min="1" max="{{ $shipments->lastPage() }}" value="{{ $shipments->currentPage() }}" onkeydown="if(event.key==='Enter'){goToPage(this.value)}" class="w-14 text-xs border-gray-300 rounded-md shadow-sm py-1 px-2 text-center">
+                    </div>
+                </div>
+            </div>
+            @endif
 
             {{-- Hidden audio player --}}
             <div id="audio-player-container" class="hidden fixed bottom-4 right-4 bg-white shadow-xl rounded-lg p-4 border z-50">
@@ -700,6 +775,21 @@
                     ];
                 },
             };
+        }
+
+        function changePerPage(value) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('per_page', value);
+            url.searchParams.delete('page');
+            window.location.href = url.toString();
+        }
+
+        function goToPage(page) {
+            page = parseInt(page);
+            if (isNaN(page) || page < 1) return;
+            const url = new URL(window.location.href);
+            url.searchParams.set('page', page);
+            window.location.href = url.toString();
         }
 
         function toggleExpand(id, row) {
