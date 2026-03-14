@@ -212,6 +212,31 @@
                                     <td x-show="isVisible('cod')" class="px-3 py-3 text-right">
                                         <span class="text-sm font-semibold text-gray-900">&#8369;{{ number_format($shipment->cod_amount, 2) }}</span>
                                     </td>
+                                    {{-- Shipment Status --}}
+                                    <td x-show="isVisible('shipment_status')" class="px-3 py-3">
+                                        @php
+                                            $shipmentStatus = $shipment->status;
+                                        @endphp
+                                        @if($shipmentStatus)
+                                            @php
+                                                $statusColors = [
+                                                    'delivered' => 'bg-green-100 text-green-800',
+                                                    'for_return' => 'bg-orange-100 text-orange-800',
+                                                    'returned' => 'bg-red-100 text-red-800',
+                                                    'failed_delivery' => 'bg-yellow-100 text-yellow-800',
+                                                    'delivering' => 'bg-blue-100 text-blue-800',
+                                                    'in_transit' => 'bg-blue-100 text-blue-800',
+                                                    'picked_up' => 'bg-gray-100 text-gray-800',
+                                                ];
+                                                $statusColor = $statusColors[$shipmentStatus->code ?? ''] ?? 'bg-gray-100 text-gray-800';
+                                            @endphp
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {{ $statusColor }}">
+                                                {{ $shipmentStatus->name }}
+                                            </span>
+                                        @else
+                                            <span class="text-xs text-gray-400">-</span>
+                                        @endif
+                                    </td>
                                     {{-- Disposition --}}
                                     <td x-show="isVisible('disposition')" class="px-3 py-3">
                                         @if($shipment->lastDisposition)
@@ -536,15 +561,16 @@
                 { key: 'waybill', label: 'Waybill', visible: true, order: 1 },
                 { key: 'customer', label: 'Customer', visible: true, order: 2 },
                 { key: 'cod', label: 'COD', visible: true, order: 3 },
-                { key: 'disposition', label: 'Disposition', visible: true, order: 4 },
-                { key: 'ai_disposition', label: 'AI Disposition', visible: true, order: 5 },
-                { key: 'summary', label: 'AI Summary', visible: true, order: 6 },
-                { key: 'sentiment', label: 'Sentiment', visible: true, order: 7 },
-                { key: 'intent', label: 'Intent', visible: true, order: 8 },
-                { key: 'score', label: 'Score', visible: true, order: 9 },
-                { key: 'issues', label: 'Issues', visible: true, order: 10 },
-                { key: 'calls', label: 'Calls', visible: true, order: 11 },
-                { key: 'actions', label: 'Actions', visible: true, order: 12 },
+                { key: 'shipment_status', label: 'Shipment Status', visible: true, order: 4 },
+                { key: 'disposition', label: 'Disposition', visible: true, order: 5 },
+                { key: 'ai_disposition', label: 'AI Disposition', visible: true, order: 6 },
+                { key: 'summary', label: 'AI Summary', visible: true, order: 7 },
+                { key: 'sentiment', label: 'Sentiment', visible: true, order: 8 },
+                { key: 'intent', label: 'Intent', visible: true, order: 9 },
+                { key: 'score', label: 'Score', visible: true, order: 10 },
+                { key: 'issues', label: 'Issues', visible: true, order: 11 },
+                { key: 'calls', label: 'Calls', visible: true, order: 12 },
+                { key: 'actions', label: 'Actions', visible: true, order: 13 },
             ];
 
             // Load saved config from server
