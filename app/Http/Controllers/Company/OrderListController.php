@@ -60,7 +60,9 @@ class OrderListController extends Controller
             $query->where('created_by', $request->created_by);
         }
 
-        $orders = $query->orderByDesc('created_at')->paginate(25)->withQueryString();
+        $perPage = (int) $request->get('per_page', 25);
+        $perPage = in_array($perPage, [10, 25, 50, 100]) ? $perPage : 25;
+        $orders = $query->orderByDesc('created_at')->paginate($perPage)->withQueryString();
 
         // Stats
         $todayStats = Order::forCompany($companyId)->whereDate('process_date', today());

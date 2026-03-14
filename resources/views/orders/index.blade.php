@@ -106,6 +106,9 @@
                                class="border-gray-300 rounded-md shadow-sm text-sm w-40">
                     </div>
 
+                    {{-- Per Page (hidden, synced by JS) --}}
+                    <input type="hidden" name="per_page" id="filter-per-page" value="{{ request('per_page', 25) }}">
+
                     <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition">
                         Filter
                     </button>
@@ -115,6 +118,77 @@
 
             {{-- Orders Table --}}
             <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+
+                {{-- Top Pagination --}}
+                <div class="px-4 py-3 bg-gray-50 border-b flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-gray-600">Show</span>
+                        <select onchange="changePerPage(this.value)" class="border-gray-300 rounded-md shadow-sm text-sm py-1 px-2">
+                            @foreach([10, 25, 50, 100] as $pp)
+                                <option value="{{ $pp }}" {{ (int) request('per_page', 25) === $pp ? 'selected' : '' }}>{{ $pp }}</option>
+                            @endforeach
+                        </select>
+                        <span class="text-sm text-gray-600">per page</span>
+                        <span class="text-sm text-gray-400 ml-2">|</span>
+                        <span class="text-sm text-gray-600 ml-2">
+                            Showing {{ $orders->firstItem() ?? 0 }}-{{ $orders->lastItem() ?? 0 }} of {{ $orders->total() }}
+                        </span>
+                    </div>
+                    @if($orders->hasPages())
+                    <div class="flex items-center gap-1">
+                        {{-- Previous --}}
+                        @if($orders->onFirstPage())
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded cursor-not-allowed">&laquo; Prev</span>
+                        @else
+                            <a href="{{ $orders->previousPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">&laquo; Prev</a>
+                        @endif
+
+                        {{-- Page Numbers --}}
+                        @php
+                            $currentPage = $orders->currentPage();
+                            $lastPage = $orders->lastPage();
+                            $start = max(1, $currentPage - 2);
+                            $end = min($lastPage, $currentPage + 2);
+                        @endphp
+
+                        @if($start > 1)
+                            <a href="{{ $orders->url(1) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">1</a>
+                            @if($start > 2)
+                                <span class="px-1 text-xs text-gray-400">...</span>
+                            @endif
+                        @endif
+
+                        @for($i = $start; $i <= $end; $i++)
+                            @if($i === $currentPage)
+                                <span class="px-2 py-1 text-xs text-white bg-indigo-600 rounded font-medium">{{ $i }}</span>
+                            @else
+                                <a href="{{ $orders->url($i) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">{{ $i }}</a>
+                            @endif
+                        @endfor
+
+                        @if($end < $lastPage)
+                            @if($end < $lastPage - 1)
+                                <span class="px-1 text-xs text-gray-400">...</span>
+                            @endif
+                            <a href="{{ $orders->url($lastPage) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">{{ $lastPage }}</a>
+                        @endif
+
+                        {{-- Next --}}
+                        @if($orders->hasMorePages())
+                            <a href="{{ $orders->nextPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">Next &raquo;</a>
+                        @else
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded cursor-not-allowed">Next &raquo;</span>
+                        @endif
+
+                        {{-- Go to Page --}}
+                        <span class="text-xs text-gray-500 ml-2">Go to</span>
+                        <input type="number" min="1" max="{{ $orders->lastPage() }}" value="{{ $orders->currentPage() }}"
+                               onkeydown="if(event.key==='Enter'){goToPage(this.value)}"
+                               class="w-14 border-gray-300 rounded-md shadow-sm text-xs py-1 px-2 text-center">
+                    </div>
+                    @endif
+                </div>
+
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -187,12 +261,76 @@
                     </table>
                 </div>
 
-                {{-- Pagination --}}
-                @if($orders->hasPages())
-                <div class="px-4 py-3 border-t bg-gray-50">
-                    {{ $orders->links() }}
+                {{-- Bottom Pagination --}}
+                <div class="px-4 py-3 bg-gray-50 border-t flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-gray-600">Show</span>
+                        <select onchange="changePerPage(this.value)" class="border-gray-300 rounded-md shadow-sm text-sm py-1 px-2">
+                            @foreach([10, 25, 50, 100] as $pp)
+                                <option value="{{ $pp }}" {{ (int) request('per_page', 25) === $pp ? 'selected' : '' }}>{{ $pp }}</option>
+                            @endforeach
+                        </select>
+                        <span class="text-sm text-gray-600">per page</span>
+                        <span class="text-sm text-gray-400 ml-2">|</span>
+                        <span class="text-sm text-gray-600 ml-2">
+                            Showing {{ $orders->firstItem() ?? 0 }}-{{ $orders->lastItem() ?? 0 }} of {{ $orders->total() }}
+                        </span>
+                    </div>
+                    @if($orders->hasPages())
+                    <div class="flex items-center gap-1">
+                        {{-- Previous --}}
+                        @if($orders->onFirstPage())
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded cursor-not-allowed">&laquo; Prev</span>
+                        @else
+                            <a href="{{ $orders->previousPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">&laquo; Prev</a>
+                        @endif
+
+                        {{-- Page Numbers --}}
+                        @php
+                            $currentPage = $orders->currentPage();
+                            $lastPage = $orders->lastPage();
+                            $start = max(1, $currentPage - 2);
+                            $end = min($lastPage, $currentPage + 2);
+                        @endphp
+
+                        @if($start > 1)
+                            <a href="{{ $orders->url(1) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">1</a>
+                            @if($start > 2)
+                                <span class="px-1 text-xs text-gray-400">...</span>
+                            @endif
+                        @endif
+
+                        @for($i = $start; $i <= $end; $i++)
+                            @if($i === $currentPage)
+                                <span class="px-2 py-1 text-xs text-white bg-indigo-600 rounded font-medium">{{ $i }}</span>
+                            @else
+                                <a href="{{ $orders->url($i) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">{{ $i }}</a>
+                            @endif
+                        @endfor
+
+                        @if($end < $lastPage)
+                            @if($end < $lastPage - 1)
+                                <span class="px-1 text-xs text-gray-400">...</span>
+                            @endif
+                            <a href="{{ $orders->url($lastPage) }}" class="px-2 py-1 text-xs text-gray-700 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">{{ $lastPage }}</a>
+                        @endif
+
+                        {{-- Next --}}
+                        @if($orders->hasMorePages())
+                            <a href="{{ $orders->nextPageUrl() }}" class="px-2 py-1 text-xs text-indigo-600 bg-white border border-gray-300 rounded hover:bg-indigo-50 transition">Next &raquo;</a>
+                        @else
+                            <span class="px-2 py-1 text-xs text-gray-400 bg-gray-100 rounded cursor-not-allowed">Next &raquo;</span>
+                        @endif
+
+                        {{-- Go to Page --}}
+                        <span class="text-xs text-gray-500 ml-2">Go to</span>
+                        <input type="number" min="1" max="{{ $orders->lastPage() }}" value="{{ $orders->currentPage() }}"
+                               onkeydown="if(event.key==='Enter'){goToPage(this.value)}"
+                               class="w-14 border-gray-300 rounded-md shadow-sm text-xs py-1 px-2 text-center">
+                    </div>
+                    @endif
                 </div>
-                @endif
+
             </div>
         </div>
     </div>
@@ -206,6 +344,21 @@
             } else {
                 customRange.classList.add('hidden');
             }
+        }
+
+        function changePerPage(value) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('per_page', value);
+            url.searchParams.delete('page'); // Reset to page 1 when changing per_page
+            window.location.href = url.toString();
+        }
+
+        function goToPage(page) {
+            page = parseInt(page);
+            if (isNaN(page) || page < 1) return;
+            var url = new URL(window.location.href);
+            url.searchParams.set('page', page);
+            window.location.href = url.toString();
         }
     </script>
     @endpush
