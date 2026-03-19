@@ -10,7 +10,7 @@
                     <a href="{{ route('telemarketing.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
                 </div>
                 <div class="card-body">
-                    <form action="{{ route('telemarketing.process-manual-assignment') }}" method="POST" class="row g-3 align-items-end mb-4">
+                    <form action="{{ route('telemarketing.manual-assignments.assign') }}" method="POST" class="row g-3 align-items-end mb-4">
                         @csrf
                         <div class="col-md-2">
                             <label class="form-label small font-weight-bold">Agent</label>

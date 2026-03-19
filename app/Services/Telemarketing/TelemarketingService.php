@@ -213,7 +213,7 @@ class TelemarketingService
         $disposition = TelemarketingDisposition::findOrFail($dispositionId);
 
         // Check if a draft row already exists (created when user clicked call button)
-        $existingDraft = \App\Models\\App\Models\TelemarketingLog::where('shipment_id', $shipmentId)
+        $existingDraft = \App\Models\TelemarketingLog::where('shipment_id', $shipmentId)
             ->where('user_id', $userId)
             ->where('status', 'draft')
             ->first();
@@ -529,7 +529,7 @@ class TelemarketingService
     {
         // Prevent deleting if it's in use by transition rules or logs
         $isUsedInRules = StatusTransitionRule::where('disposition_id', $dispositionId)->exists();
-        $isUsedInLog::where('disposition_id', $dispositionId)->exists();
+        $isUsedInLogs = \App\Models\TelemarketingLog::where('disposition_id', $dispositionId)->exists();
 
         if ($isUsedInRules || $isUsedInLogs) {
             throw new \Exception('Cannot delete disposition as it is currently in use.');
@@ -647,7 +647,7 @@ class TelemarketingService
 
         // Per-telemarketer stats — include ALL telemarketers (active + inactive)
         $telemarketers = User::where('company_id', $companyId)
-            ->where('role', 'telemarketer')
+            ->role('Telemarketer')
             ->withCount([
                 'telemarketingLogs as calls_today' => fn ($q) => $q->where('created_at', '>=', $today),
                 'telemarketingLogs as calls_this_week' => fn ($q) => $q->where('created_at', '>=', now()->startOfWeek()),

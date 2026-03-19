@@ -41,9 +41,11 @@
                         </x-nav-link>
                         @endcan
 
+                        @can('settings.manage')
                         <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*')">
                             Orders
                         </x-nav-link>
+                        @endcan
 
                         @can('sms.campaigns.view')
                         <x-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">
@@ -142,7 +144,9 @@
                 <x-responsive-nav-link :href="route('telemarketing.manual-assignments')" :active="request()->routeIs('telemarketing.manual-assignments')">Manual Assignments</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('telemarketing.pending-callbacks')" :active="request()->routeIs('telemarketing.pending-callbacks')">Pending Callbacks</x-responsive-nav-link>
                 @endcan
+                @can('settings.manage')
                 <x-responsive-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*')">Orders</x-responsive-nav-link>
+                @endcan
                 @can('sms.campaigns.view')
                 <x-responsive-nav-link :href="route('sms.campaigns.index')" :active="request()->routeIs('sms.*')">SMS Campaigns</x-responsive-nav-link>
                 @endcan
