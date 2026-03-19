@@ -635,10 +635,18 @@ class TelemarketingService
     {
         $today = now()->startOfDay();
 
-        $totalShipments = Shipment::forCompany($companyId)->count();
-        $telemarketable = Shipment::forCompany($companyId)->telemarketable()->count();
-        $onCooldown = Shipment::forCompany($companyId)
-            ->onCooldown()
+        // Counts by telemarketing_status for stat cards
+        $totalUnassigned = Shipment::forCompany($companyId)->unassigned()
+            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+            ->count();
+        $totalPending = Shipment::forCompany($companyId)
+            ->where('telemarketing_status', 'pending')
+            ->count();
+        $totalInProgress = Shipment::forCompany($companyId)
+            ->where('telemarketing_status', 'in_progress')
+            ->count();
+        $totalCompleted = Shipment::forCompany($companyId)
+            ->where('telemarketing_status', 'completed')
             ->count();
 
         $callsToday = \App\Models\TelemarketingLog::whereHas('shipment', fn ($q) => $q->forCompany($companyId))
@@ -649,17 +657,35 @@ class TelemarketingService
         $telemarketers = User::where('company_id', $companyId)
             ->role('Telemarketer')
             ->withCount([
-                'telemarketingLogs as calls_today' => fn ($q) => $q->where('created_at', '>=', $today),
+                'telemarketingLogs as calls_today_count' => fn ($q) => $q->where('created_at', '>=', $today),
                 'telemarketingLogs as calls_this_week' => fn ($q) => $q->where('created_at', '>=', now()->startOfWeek()),
             ])
             ->get();
 
+        // Add pending_count for each telemarketer
+        foreach ($telemarketers as $tm) {
+            $tm->pending_count = Shipment::forCompany($companyId)
+                ->where('assigned_to_user_id', $tm->id)
+                ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+                ->count();
+        }
+
+        // Build agent_status_map from assignment rules
+        $agentStatusMap = [];
+        $rules = \App\Models\TelemarketingAssignmentRule::forCompany($companyId)->active()->get();
+        foreach ($rules as $rule) {
+            // Rules may assign specific statuses to agents via related logic
+            // For now, provide empty arrays ("All" statuses) per agent
+        }
+
         return [
-            'total_shipments' => $totalShipments,
-            'telemarketable' => $telemarketable,
-            'on_cooldown' => $onCooldown,
+            'total_unassigned' => $totalUnassigned,
+            'total_pending' => $totalPending,
+            'total_in_progress' => $totalInProgress,
+            'total_completed' => $totalCompleted,
             'calls_today' => $callsToday,
             'telemarketers' => $telemarketers,
+            'agent_status_map' => $agentStatusMap,
         ];
     }
 }
