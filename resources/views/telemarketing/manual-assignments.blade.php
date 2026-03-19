@@ -1,109 +1,131 @@
-@extends('layouts.app')
+<x-app-layout>
+    <x-slot name="title">Manual Assignments</x-slot>
+    <x-slot name="header">
+        <div class="flex justify-between items-center">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Manual Assignment & Logs</h2>
+            <a href="{{ route('telemarketing.dashboard') }}" class="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition">&larr; Back to Dashboard</a>
+        </div>
+    </x-slot>
 
-@section('content')
-<div class="container-fluid py-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card mb-4 shadow-sm">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 font-weight-bold">Manual Assignment & Logs</h5>
-                    <a href="{{ route('telemarketing.dashboard') }}" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
+    <div class="py-6">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            {{-- Flash Messages --}}
+            @if(session('success'))
+                <div class="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+                    {{ session('success') }}
                 </div>
-                <div class="card-body">
-                    <form action="{{ route('telemarketing.manual-assignments.assign') }}" method="POST" class="row g-3 align-items-end mb-4">
-                        @csrf
-                        <div class="col-md-2">
-                            <label class="form-label small font-weight-bold">Agent</label>
-                            <select name="telemarketer_id" class="form-select form-select-sm" required>
-                                <option value="">Select Agent...</option>
-                                @foreach($telemarketers as $agent)
-                                    <option value="{{ $agent->id }}">{{ $agent->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small font-weight-bold">Status</label>
-                            <select name="status_id" class="form-select form-select-sm">
-                                <option value="">All Statuses</option>
-                                @foreach($statuses as $status)
-                                    <option value="{{ $status->id }}">{{ $status->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small font-weight-bold">Date From</label>
-                            <input type="date" name="date_from" class="form-control form-control-sm">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small font-weight-bold">Date To</label>
-                            <input type="date" name="date_to" class="form-control form-control-sm">
-                        </div>
-                        <div class="col-md-1">
-                            <label class="form-label small font-weight-bold">Limit</label>
-                            <input type="number" name="limit" value="100" class="form-control form-control-sm" required>
-                        </div>
-                        <div class="col-md-3">
-                            <button type="submit" class="btn btn-primary btn-sm w-100 font-weight-bold">Assign Shipments</button>
-                        </div>
-                    </form>
+            @endif
+            @if(session('error'))
+                <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                    {{ session('error') }}
+                </div>
+            @endif
 
-                    <hr>
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 mb-6">
+                <h3 class="text-lg font-semibold mb-4">Assign Shipments to Agent</h3>
+                <form action="{{ route('telemarketing.manual-assignments.assign') }}" method="POST" class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Agent</label>
+                        <select name="telemarketer_id" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
+                            <option value="">Select Agent...</option>
+                            @foreach($telemarketers as $agent)
+                                <option value="{{ $agent->id }}">{{ $agent->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select name="status_id" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                            <option value="">All Statuses</option>
+                            @foreach($statuses as $status)
+                                <option value="{{ $status->id }}">{{ $status->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+                        <input type="date" name="date_from" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+                        <input type="date" name="date_to" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Limit</label>
+                        <input type="number" name="limit" value="100" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm" required>
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full inline-flex justify-center items-center px-4 py-2 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700 focus:bg-indigo-700 active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                            Assign Shipments
+                        </button>
+                    </div>
+                </form>
+            </div>
 
-                    <h6 class="mt-4 mb-3 font-weight-bold">Assignment History & Stats</h6>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle small">
-                            <thead class="bg-light">
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold mb-4">Assignment History & Stats</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
                                 <tr>
-                                    <th>Date</th>
-                                    <th>Assigned To</th>
-                                    <th>Filters Used</th>
-                                    <th>Total Assigned</th>
-                                    <th>Progress</th>
-                                    <th>Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned By</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned To</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filters Used</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Assigned</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody class="bg-white divide-y divide-gray-200">
                                 @forelse($logs as $log)
                                 @php
-                                    // Calculate stats for this batch
                                     $completedCount = \App\Models\Shipment::whereIn('id', $log->shipment_ids ?? [])
                                         ->where('telemarketing_attempt_count', '>', 0)
                                         ->count();
                                     $percent = $log->shipment_count > 0 ? round(($completedCount / $log->shipment_count) * 100) : 0;
                                 @endphp
-                                <tr>
-                                    <td>{{ $log->assigned_at->format('M d, Y h:i A') }}</td>
-                                    <td><strong>{{ $log->assignedTo->name }}</strong></td>
-                                    <td class="text-muted">{{ $log->status_filters }}</td>
-                                    <td><span class="badge bg-secondary">{{ $log->shipment_count }} items</span></td>
-                                    <td>
-                                        <div class="progress" style="height: 15px;">
-                                            <div class="progress-bar {{ $percent == 100 ? 'bg-success' : 'bg-info' }}" role="progressbar" style="width: {{ $percent }}%;" aria-valuenow="{{ $percent }}" aria-valuemin="0" aria-valuemax="100">{{ $percent }}%</div>
-                                        </div>
-                                        <small class="text-muted">{{ $completedCount }} / {{ $log->shipment_count }} called</small>
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $log->assigned_at->format('M d, Y h:i A') }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ $log->assignedBy->name ?? 'N/A' }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $log->assignedTo->name ?? 'N/A' }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ $log->status_filters }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                            {{ $log->shipment_count }} items
+                                        </span>
                                     </td>
-                                    <td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div class="{{ $percent == 100 ? 'bg-green-600' : 'bg-indigo-600' }} h-2.5 rounded-full" style="width: {{ $percent }}%"></div>
+                                        </div>
+                                        <span class="text-xs text-gray-500 mt-1">{{ $completedCount }} / {{ $log->shipment_count }} called ({{ $percent }}%)</span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
                                         @if($percent == 100)
-                                            <span class="badge bg-success">Completed</span>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Completed</span>
                                         @else
-                                            <span class="badge bg-warning text-dark">In Progress</span>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">In Progress</span>
                                         @endif
                                     </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">No assignment logs found.</td>
+                                    <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                                        No assignment logs found. Use the form above to assign shipments to agents.
+                                    </td>
                                 </tr>
                                 @endforelse
                             </tbody>
                         </table>
-                        <div class="mt-3">
-                            {{ $logs->links() }}
-                        </div>
+                    </div>
+                    <div class="mt-4">
+                        {{ $logs->links() }}
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-@endsection
+</x-app-layout>

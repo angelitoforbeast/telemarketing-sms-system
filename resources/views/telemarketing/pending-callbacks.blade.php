@@ -1,104 +1,91 @@
-@extends('layouts.app')
+<x-app-layout>
+    <x-slot name="title">Pending Callbacks</x-slot>
+    <x-slot name="header">
+        <div class="flex justify-between items-center">
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Pending Callbacks</h2>
+            <a href="{{ route('telemarketing.dashboard') }}" class="text-sm text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md bg-gray-100 hover:bg-gray-200 transition">&larr; Back to Dashboard</a>
+        </div>
+    </x-slot>
 
-@section('content')
-<div class="container-fluid py-4">
-    <div class="row">
-        <div class="col-12">
-            <div class="card mb-4 shadow-sm border-0">
-                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
-                    <h5 class="mb-0 font-weight-bold text-primary">Pending Callbacks</h5>
-                    <a href="{{ route('telemarketing.dashboard') }}" class="btn btn-outline-secondary btn-sm rounded-pill">← Back to Dashboard</a>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="bg-light text-muted small text-uppercase font-weight-bold">
+    <div class="py-6">
+        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6">
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-4">Customer / Waybill</th>
-                                    <th>Assigned Agent</th>
-                                    <th>Last Call Date</th>
-                                    <th>Last Disposition</th>
-                                    <th>Scheduled Callback</th>
-                                    <th class="text-end px-4">Action</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer / Waybill</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned Agent</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Call Date</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Disposition</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scheduled Callback</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody class="bg-white divide-y divide-gray-200">
                                 @forelse($callbacks as $shipment)
-                                <tr>
-                                    <td class="px-4 py-3">
-                                        <div class="d-flex flex-column">
-                                            <span class="font-weight-bold text-dark">{{ $shipment->consignee_name }}</span>
-                                            <small class="text-primary font-weight-bold">{{ $shipment->waybill_no }}</small>
-                                            <small class="text-muted">{{ $shipment->consignee_phone_1 }}</small>
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-medium text-gray-900">{{ $shipment->consignee_name }}</span>
+                                            <span class="text-xs font-semibold text-indigo-600">{{ $shipment->waybill_no }}</span>
+                                            <span class="text-xs text-gray-500">{{ $shipment->consignee_phone_1 }}</span>
                                         </div>
                                     </td>
-                                    <td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
                                         @if($shipment->assignedTo)
-                                            <div class="d-flex align-items-center">
-                                                <div class="avatar avatar-xs bg-info text-white rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 24px; height: 24px; font-size: 10px;">
-                                                    {{ strtoupper(substr($shipment->assignedTo->name, 0, 2)) }}
-                                                </div>
-                                                <span class="small">{{ $shipment->assignedTo->name }}</span>
-                                            </div>
+                                            <span class="text-sm text-gray-900">{{ $shipment->assignedTo->name }}</span>
                                         @else
-                                            <span class="badge bg-light text-muted border">Unassigned</span>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Unassigned</span>
                                         @endif
                                     </td>
-                                    <td>
-                                        <span class="small text-muted">{{ $shipment->last_contacted_at ? $shipment->last_contacted_at->format('M d, Y h:i A') : 'Never' }}</span>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {{ $shipment->last_contacted_at ? $shipment->last_contacted_at->format('M d, Y h:i A') : 'Never' }}
                                     </td>
-                                    <td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
                                         @if($shipment->lastDisposition)
-                                            <span class="badge rounded-pill px-2 py-1 small" style="background-color: {{ $shipment->lastDisposition->color }}; color: #fff;">
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white" style="background-color: {{ $shipment->lastDisposition->color }};">
                                                 {{ $shipment->lastDisposition->name }}
                                             </span>
                                         @else
-                                            <span class="text-muted small">-</span>
+                                            <span class="text-sm text-gray-400">-</span>
                                         @endif
                                     </td>
-                                    <td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
                                         @php
                                             $isOverdue = $shipment->callback_scheduled_at && $shipment->callback_scheduled_at->isPast();
                                         @endphp
-                                        <div class="d-flex flex-column">
-                                            <span class="font-weight-bold {{ $isOverdue ? 'text-danger' : 'text-success' }}">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm font-medium {{ $isOverdue ? 'text-red-600' : 'text-green-600' }}">
                                                 {{ $shipment->callback_scheduled_at ? $shipment->callback_scheduled_at->format('M d, Y h:i A') : '-' }}
                                             </span>
                                             @if($isOverdue)
-                                                <small class="badge bg-danger-soft text-danger py-0 px-1 rounded border border-danger" style="width: fit-content; font-size: 9px;">OVERDUE</small>
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 w-fit mt-1">OVERDUE</span>
                                             @endif
                                         </div>
                                     </td>
-                                    <td class="text-end px-4">
-                                        <a href="{{ route('telemarketing.call', $shipment->id) }}" class="btn btn-sm btn-primary rounded-pill px-3">Call Now</a>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right">
+                                        <a href="{{ route('telemarketing.call', $shipment->id) }}" class="inline-flex items-center px-3 py-1.5 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700 transition">
+                                            Call Now
+                                        </a>
                                     </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-5">
-                                        <div class="d-flex flex-column align-items-center text-muted">
-                                            <i class="fas fa-calendar-check fa-3x mb-3 opacity-25"></i>
-                                            <p class="mb-0">No pending callbacks found.</p>
-                                        </div>
+                                    <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                                        No pending callbacks found.
                                     </td>
                                 </tr>
                                 @endforelse
                             </tbody>
                         </table>
                     </div>
-                    <div class="p-3 border-top bg-light">
+                    <div class="mt-4">
                         {{ $callbacks->links() }}
                     </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-
-<style>
-    .bg-danger-soft { background-color: #fff5f5; }
-    .font-weight-bold { font-weight: 600 !important; }
-    .card { border-radius: 12px; }
-    .table thead th { border-top: none; }
-</style>
-@endsection
+</x-app-layout>
