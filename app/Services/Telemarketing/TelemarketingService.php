@@ -269,7 +269,12 @@ class TelemarketingService
         }
 
         if ($callbackAt) {
-            $newStatus = 'callback';
+            // Keep status as in_progress (not 'callback' which is not a valid enum value).
+            // The callback_scheduled_at column tracks when to call back.
+            // Queue ordering automatically prioritises callbacks that are due.
+            if ($newStatus === 'in_progress' || $newStatus === 'pending') {
+                $newStatus = 'in_progress';
+            }
             $callbackScheduledAt = $callbackAt;
         }
 
@@ -698,5 +703,55 @@ class TelemarketingService
             ->with(['fromStatus', 'toStatus'])
             ->orderBy('priority', 'desc')
             ->get();
+    }
+
+    /**
+     * Validate a manual assignment request.
+     * Returns an error message string if invalid, or null if valid.
+     */
+    public function validateManualAssign(int $telemarketerId, ?int $statusId, int $companyId): ?string
+    {
+        // Verify the telemarketer belongs to this company and is active
+        $telemarketer = User::where('id', $telemarketerId)
+            ->where('company_id', $companyId)
+            ->first();
+
+        if (!$telemarketer) {
+            return 'Telemarketer not found in this company.';
+        }
+
+        if (!$telemarketer->is_telemarketing_active) {
+            return 'This telemarketer is currently inactive.';
+        }
+
+        // No strict status validation for now — allow assigning any status to any agent
+        return null;
+    }
+
+    /**
+     * Get pending callbacks for the company (for manager/owner dashboard).
+     * Respects the company setting for showing all shipments or callbacks only.
+     */
+    public function getPendingCallbacks(int $companyId)
+    {
+        $settings = \App\Models\CompanyTelemarketingSetting::getOrCreate($companyId);
+        $viewMode = $settings->pending_callbacks_view ?? 'callbacks_only';
+
+        $query = Shipment::with(['status', 'lastDisposition', 'assignedTo'])
+            ->forCompany($companyId);
+
+        if ($viewMode === 'callbacks_only') {
+            // Show only shipments with a scheduled callback
+            $query->whereNotNull('callback_scheduled_at')
+                  ->whereIn('telemarketing_status', ['pending', 'in_progress']);
+        } else {
+            // Show all telemarketable shipments
+            $query->whereIn('telemarketing_status', ['pending', 'in_progress']);
+        }
+
+        return $query->orderByRaw("CASE WHEN callback_scheduled_at IS NOT NULL AND callback_scheduled_at <= ? THEN 0 ELSE 1 END ASC", [now()])
+                     ->orderBy('callback_scheduled_at', 'asc')
+                     ->paginate(50)
+                     ->withQueryString();
     }
 }

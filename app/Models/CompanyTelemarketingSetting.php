@@ -17,6 +17,7 @@ class CompanyTelemarketingSetting extends Model
         'recording_upload_timeout',
         'recording_exempt_dispositions',
         'call_log_columns',
+        'pending_callbacks_view',
     ];
     protected $casts = [
         'auto_call_enabled' => 'boolean',
@@ -45,6 +46,7 @@ class CompanyTelemarketingSetting extends Model
                 'require_recording' => false,
                 'recording_upload_timeout' => 30,
                 'recording_exempt_dispositions' => null,
+                'pending_callbacks_view' => 'callbacks_only',
             ]
         );
     }

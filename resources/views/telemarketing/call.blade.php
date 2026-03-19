@@ -69,6 +69,59 @@
             @endif
             @endif
             </div>
+
+            {{-- Scheduled Callback Banner --}}
+            @if($shipment->callback_scheduled_at)
+            <div class="mb-4 bg-orange-50 border border-orange-300 rounded-lg p-4 flex items-start space-x-3">
+                <div class="flex-shrink-0 mt-0.5">
+                    <svg class="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-orange-800">
+                        Scheduled Callback
+                        @if($shipment->callback_scheduled_at->isPast())
+                            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">OVERDUE</span>
+                        @endif
+                    </p>
+                    <p class="text-xs text-orange-600 mt-1">
+                        Callback scheduled for <strong>{{ $shipment->callback_scheduled_at->format('M d, Y \a\t g:i A') }}</strong>
+                        @if($shipment->assignedTo)
+                            by <strong>{{ $shipment->assignedTo->name }}</strong>
+                        @endif
+                    </p>
+                    @php
+                        $lastCallbackLog = $callHistory->first(fn($log) => $log->callback_at !== null);
+                    @endphp
+                    @if($lastCallbackLog && $lastCallbackLog->notes)
+                        <p class="text-xs text-orange-700 mt-1 italic">"{{ $lastCallbackLog->notes }}"</p>
+                    @endif
+                </div>
+            </div>
+            @endif
+
+            {{-- AI Summary from Last Call --}}
+            @php
+                $lastAnalyzedLog = $callHistory->first(fn($log) => !empty($log->ai_summary));
+            @endphp
+            @if($lastAnalyzedLog)
+            <div class="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                <div class="flex items-center space-x-2 mb-2">
+                    <div class="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                    </div>
+                    <h3 class="text-sm font-semibold text-indigo-800">AI Summary of Last Call</h3>
+                    <span class="text-xs text-indigo-400">{{ $lastAnalyzedLog->ai_analyzed_at?->format('M d, Y g:i A') }}</span>
+                </div>
+                <p class="text-sm text-indigo-900 leading-relaxed">{{ $lastAnalyzedLog->ai_summary }}</p>
+                @if($lastAnalyzedLog->ai_customer_intent)
+                    <p class="text-xs text-indigo-600 mt-2"><strong>Customer Intent:</strong> {{ $lastAnalyzedLog->ai_customer_intent }}</p>
+                @endif
+                @if($lastAnalyzedLog->ai_action_items)
+                    <p class="text-xs text-indigo-600 mt-1"><strong>Action Items:</strong> {{ $lastAnalyzedLog->ai_action_items }}</p>
+                @endif
+            </div>
+            @endif
+
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {{-- LEFT: Shipment Info + Click-to-Call --}}
