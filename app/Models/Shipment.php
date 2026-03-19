@@ -138,6 +138,11 @@ class Shipment extends Model
                      ->where(function ($q) {
                          $q->whereNull('telemarketing_cooldown_until')
                            ->orWhere('telemarketing_cooldown_until', '<=', now());
+                     })
+                     // Hide shipments with future callbacks — only show when callback time is due
+                     ->where(function ($q) {
+                         $q->whereNull('callback_scheduled_at')
+                           ->orWhere('callback_scheduled_at', '<=', now());
                      });
     }
 
