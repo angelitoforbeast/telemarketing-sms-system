@@ -5,4 +5,5 @@
     <string name="save_button">Save &amp; Connect</string>
     <string name="channel_name">Call Recording Monitor</string>
     <string name="channel_description">Monitors and uploads call recordings</string>
+    <string name="accessibility_service_description">TeleSMS Call Recording Service - Enables reliable call recording during phone calls. This service allows TeleSMS to capture call audio for quality assurance and training purposes.</string>
 </resources>

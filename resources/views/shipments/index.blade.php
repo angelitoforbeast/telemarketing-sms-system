@@ -46,7 +46,14 @@
                         </div>
                         <div class="flex gap-2">
                             <input type="date" name="date_to" value="{{ request('date_to') }}" class="w-full border-gray-300 rounded-md shadow-sm text-sm" placeholder="To" />
-                            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700">Filter</button>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <select name="per_page" class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="25" {{ request('per_page', 25) == 25 ? 'selected' : '' }}>25 per page</option>
+                                <option value="100" {{ request('per_page') == 100 ? 'selected' : '' }}>100 per page</option>
+                                <option value="1000" {{ request('per_page') == 1000 ? 'selected' : '' }}>1000 per page</option>
+                            </select>
+                            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 whitespace-nowrap">Filter</button>
                         </div>
                     </form>
                 </div>
@@ -81,6 +88,18 @@
                         @csrf
                         <input type="number" name="limit" placeholder="Limit" class="w-24 border-gray-300 rounded-md shadow-sm text-sm" />
                         <button type="submit" class="px-3 py-2 bg-purple-600 text-white text-xs rounded-md hover:bg-purple-700">Auto-Assign</button>
+                    </form>
+                    @endcan
+
+                    {{-- Bulk Delete (CEO/Owner only) --}}
+                    @can('shipments.delete')
+                    <form method="POST" action="{{ route('shipments.bulk-delete') }}" id="bulkDeleteForm"
+                          onsubmit="return confirm('Are you sure you want to DELETE the selected shipments? This action cannot be undone.');">
+                        @csrf
+                        <div id="bulkDeleteIds"></div>
+                        <button type="submit" class="px-3 py-2 bg-red-800 text-white text-xs rounded-md hover:bg-red-900">
+                            🗑 Delete Selected
+                        </button>
                     </form>
                     @endcan
                 </div>
@@ -120,7 +139,17 @@
                                     <td class="px-3 py-3 text-sm text-gray-600">{{ $shipment->assignedTo?->name ?? '-' }}</td>
                                     <td class="px-3 py-3 text-sm text-gray-600">{{ $shipment->telemarketing_attempt_count }}</td>
                                     <td class="px-3 py-3 text-sm">
-                                        <a href="{{ route('shipments.show', $shipment) }}" class="text-indigo-600 hover:text-indigo-900 text-xs">View</a>
+                                        <div class="flex items-center gap-2">
+                                            <a href="{{ route('shipments.show', $shipment) }}" class="text-indigo-600 hover:text-indigo-900 text-xs">View</a>
+                                            @can('shipments.delete')
+                                            <form method="POST" action="{{ route('shipments.destroy', $shipment) }}" class="inline"
+                                                  onsubmit="return confirm('Delete this shipment? This cannot be undone.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="text-red-600 hover:text-red-900 text-xs">Delete</button>
+                                            </form>
+                                            @endcan
+                                        </div>
                                     </td>
                                 </tr>
                             @empty
@@ -144,7 +173,7 @@
         });
         function syncBulkIds() {
             const ids = [...document.querySelectorAll('.shipment-cb:checked')].map(cb => cb.value);
-            ['bulkAssignIds', 'bulkUnassignIds'].forEach(containerId => {
+            ['bulkAssignIds', 'bulkUnassignIds', 'bulkDeleteIds'].forEach(containerId => {
                 const container = document.getElementById(containerId);
                 if (container) {
                     container.innerHTML = ids.map(id => `<input type="hidden" name="shipment_ids[]" value="${id}" />`).join('');

@@ -120,3 +120,5 @@
         </div>
     </div>
 </x-app-layout>
+
+</div>

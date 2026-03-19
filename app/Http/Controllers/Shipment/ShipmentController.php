@@ -23,7 +23,8 @@ class ShipmentController extends Controller
         $user = $request->user();
         $companyId = $user->company_id;
 
-        $shipments = $this->shipmentService->list($companyId, $request->all());
+        $perPage = in_array((int) $request->input("per_page"), [25, 100, 1000]) ? (int) $request->input("per_page") : 25;
+        $shipments = $this->shipmentService->list($companyId, $request->all(), $perPage);
         $statuses = ShipmentStatus::orderBy('sort_order')->get();
         $telemarketers = User::forCompany($companyId)->active()->role('Telemarketer')->get();
 
@@ -124,6 +125,51 @@ class ShipmentController extends Controller
         return back()->with('success', "{$count} shipments unassigned.");
     }
 
+
+    /**
+     * Delete a single shipment (CEO/Owner only).
+     */
+    public function destroy(Shipment $shipment)
+    {
+        $this->authorizeCompany($shipment);
+
+        // Delete related records first
+        $shipment->telemarketingLogs()->delete();
+        $shipment->statusLogs()->delete();
+        $shipment->smsSendLogs()->delete();
+        $shipment->delete();
+
+        return back()->with('success', 'Shipment deleted successfully.');
+    }
+
+    /**
+     * Bulk delete shipments (CEO/Owner only).
+     */
+    public function bulkDelete(Request $request)
+    {
+        $request->validate([
+            'shipment_ids' => 'required|array|min:1',
+            'shipment_ids.*' => 'integer|exists:shipments,id',
+        ]);
+
+        $user = $request->user();
+        $companyId = $user->company_id;
+
+        $shipments = Shipment::whereIn('id', $request->shipment_ids)
+            ->where('company_id', $companyId)
+            ->get();
+
+        $count = 0;
+        foreach ($shipments as $shipment) {
+            $shipment->telemarketingLogs()->delete();
+            $shipment->statusLogs()->delete();
+            $shipment->smsSendLogs()->delete();
+            $shipment->delete();
+            $count++;
+        }
+
+        return back()->with('success', "{$count} shipments deleted successfully.");
+    }
     protected function authorizeCompany(Shipment $shipment): void
     {
         if ($shipment->company_id !== auth()->user()->company_id) {

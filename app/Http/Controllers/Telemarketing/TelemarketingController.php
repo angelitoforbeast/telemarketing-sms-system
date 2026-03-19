@@ -1009,4 +1009,64 @@ class TelemarketingController extends Controller
             }
         }
     }
+
+    public function manualAssignments(Request $request)
+    {
+        $companyId = $request->user()->company_id;
+        $logs = $this->telemarketingService->getAssignmentLogs($companyId);
+        $telemarketers = $this->telemarketingService->getAvailableTelemarketers($companyId);
+        $statuses = \App\Models\ShipmentStatus::all();
+
+        return view('telemarketing.manual-assignments', compact('logs', 'telemarketers', 'statuses'));
+    }
+
+    public function processManualAssignment(Request $request)
+    {
+        $request->validate([
+            'telemarketer_id' => 'required|integer|exists:users,id',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date',
+            'status_id' => 'nullable|integer|exists:shipment_statuses,id',
+            'courier' => 'nullable|string',
+            'limit' => 'required|integer|min:1|max:5000',
+        ]);
+
+        $companyId = $request->user()->company_id;
+        
+        // Find shipments matching filters
+        $query = \App\Models\Shipment::forCompany($companyId)
+            ->telemarketable();
+
+        if ($request->date_from) $query->where('created_at', '>=', $request->date_from);
+        if ($request->date_to) $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+        if ($request->status_id) $query->where('normalized_status_id', $request->status_id);
+        if ($request->courier) $query->where('courier', $request->courier);
+
+        $shipmentIds = $query->limit($request->limit)->pluck('id')->toArray();
+
+        if (empty($shipmentIds)) {
+            return back()->with('error', 'No shipments found matching the filters.');
+        }
+
+        $filters = "Status: " . ($request->status_id ? \App\Models\ShipmentStatus::find($request->status_id)->name : 'All') . 
+                   ", Date: " . ($request->date_from ?: 'Any') . " to " . ($request->date_to ?: 'Any');
+
+        $this->telemarketingService->manualAssignWithLog(
+            $companyId,
+            $request->user()->id,
+            $request->telemarketer_id,
+            $shipmentIds,
+            $filters
+        );
+
+        return back()->with('success', count($shipmentIds) . ' shipments assigned successfully to ' . \App\Models\User::find($request->telemarketer_id)->name);
+    }
+
+    public function pendingCallbacks(Request $request)
+    {
+        $companyId = $request->user()->company_id;
+        $callbacks = $this->telemarketingService->getPendingCallbacks($companyId);
+
+        return view('telemarketing.pending-callbacks', compact('callbacks'));
+    }
 }

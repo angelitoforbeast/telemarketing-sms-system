@@ -27,8 +27,17 @@
                         @endcan
 
                         @can('telemarketing.view-queue')
-                        <x-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.*')">
+                        <x-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.queue')">
                             Telemarketing
+                        </x-nav-link>
+                        @endcan
+
+                        @can('telemarketing.view-all-logs')
+                        <x-nav-link :href="route('telemarketing.manual-assignments')" :active="request()->routeIs('telemarketing.manual-assignments')">
+                            Manual Assignments
+                        </x-nav-link>
+                        <x-nav-link :href="route('telemarketing.pending-callbacks')" :active="request()->routeIs('telemarketing.pending-callbacks')">
+                            Pending Callbacks
                         </x-nav-link>
                         @endcan
 
@@ -126,7 +135,12 @@
                 <x-responsive-nav-link :href="route('shipments.index')" :active="request()->routeIs('shipments.*')">Shipments</x-responsive-nav-link>
                 @endcan
                 @can('telemarketing.view-queue')
-                <x-responsive-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.*')">Telemarketing</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('telemarketing.queue')" :active="request()->routeIs('telemarketing.queue')">Telemarketing</x-responsive-nav-link>
+                @endcan
+
+                @can('telemarketing.view-all-logs')
+                <x-responsive-nav-link :href="route('telemarketing.manual-assignments')" :active="request()->routeIs('telemarketing.manual-assignments')">Manual Assignments</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('telemarketing.pending-callbacks')" :active="request()->routeIs('telemarketing.pending-callbacks')">Pending Callbacks</x-responsive-nav-link>
                 @endcan
                 <x-responsive-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*')">Orders</x-responsive-nav-link>
                 @can('sms.campaigns.view')

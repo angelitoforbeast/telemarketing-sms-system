@@ -3,7 +3,19 @@
     <x-slot name="header">
         <div class="flex justify-between items-center">
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">Shipment: {{ $shipment->waybill_no }}</h2>
-            <a href="{{ route('shipments.index') }}" class="text-sm text-indigo-600 hover:text-indigo-900">&larr; Back to List</a>
+            <div class="flex items-center gap-4">
+                @can('shipments.delete')
+                <form method="POST" action="{{ route('shipments.destroy', $shipment) }}"
+                      onsubmit="return confirm('Are you sure you want to DELETE this shipment? This action cannot be undone.');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="px-3 py-2 bg-red-600 text-white text-xs rounded-md hover:bg-red-700">
+                        Delete Shipment
+                    </button>
+                </form>
+                @endcan
+                <a href="{{ route('shipments.index') }}" class="text-sm text-indigo-600 hover:text-indigo-900">&larr; Back to List</a>
+            </div>
         </div>
     </x-slot>
 

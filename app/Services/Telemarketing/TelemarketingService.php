@@ -7,11 +7,11 @@ use App\Models\StatusTransitionRule;
 use App\Models\TelemarketerStatusAssignment;
 use App\Models\TelemarketingAssignmentRule;
 use App\Models\TelemarketingDisposition;
-use App\Models\TelemarketingLog;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+
 
 class TelemarketingService
 {
@@ -208,12 +208,12 @@ class TelemarketingService
         ?string $callbackAt = null,
         ?string $phoneCalled = null,
         ?int $callDurationSeconds = null
-    ): TelemarketingLog {
+    ): \App\Models\TelemarketingLog {
         $shipment = Shipment::findOrFail($shipmentId);
         $disposition = TelemarketingDisposition::findOrFail($dispositionId);
 
         // Check if a draft row already exists (created when user clicked call button)
-        $existingDraft = TelemarketingLog::where('shipment_id', $shipmentId)
+        $existingDraft = \App\Models\\App\Models\TelemarketingLog::where('shipment_id', $shipmentId)
             ->where('user_id', $userId)
             ->where('status', 'draft')
             ->first();
@@ -237,7 +237,7 @@ class TelemarketingService
             ]);
         } else {
             // No draft exists — create a new completed row (fallback for non-Android usage)
-            $log = TelemarketingLog::create([
+            $log = \App\Models\TelemarketingLog::create([
                 'shipment_id' => $shipmentId,
                 'user_id' => $userId,
                 'status' => 'completed',
@@ -268,18 +268,22 @@ class TelemarketingService
             $newStatus = 'do_not_call';
         }
 
-        if ($disposition->requires_callback && $callbackAt) {
+        if ($callbackAt) {
+            $newStatus = 'callback';
             $callbackScheduledAt = $callbackAt;
         }
 
         // Update shipment
         $shipment->update([
-            'telemarketing_attempt_count' => $shipment->telemarketing_attempt_count + 1,
-            'last_contacted_at' => now(),
             'telemarketing_status' => $newStatus,
             'last_disposition_id' => $dispositionId,
+            'last_contacted_at' => now(),
             'callback_scheduled_at' => $callbackScheduledAt,
+            'telemarketing_attempt_count' => $shipment->telemarketing_attempt_count + 1,
             'is_do_not_contact' => $disposition->marks_do_not_call,
+            'telemarketing_cooldown_until' => $disposition->cooldown_hours > 0
+                ? now()->addHours($disposition->cooldown_hours)
+                : null,
         ]);
 
         return $log;
@@ -290,514 +294,270 @@ class TelemarketingService
      */
     public function getCallHistory(int $shipmentId): \Illuminate\Database\Eloquent\Collection
     {
-        return TelemarketingLog::with(['user', 'disposition'])
+        return \App\Models\TelemarketingLog::with(['user', 'disposition'])
             ->where('shipment_id', $shipmentId)
             ->orderBy('created_at', 'desc')
             ->get();
     }
 
     // ────────────────────────────────────────────────────────────────
-    //  STATUS CHANGE HANDLING (Auto-Reassign)
+    //  STATUS TRANSITIONS
     // ────────────────────────────────────────────────────────────────
 
     /**
-     * Handle a shipment status change — apply transition rules.
-     * Called after import updates a shipment's status.
-     *
-     * @return string The action taken: 'reassigned', 'unassigned', 'completed', 'no_action', 'skipped'
+     * Get all status transition rules for a company.
      */
-    public function handleStatusChange(Shipment $shipment, ?int $oldStatusId, ?int $newStatusId): string
+    public function getStatusTransitionRules(int $companyId): \Illuminate\Database\Eloquent\Collection
     {
-        // No change
-        if ($oldStatusId === $newStatusId) return 'no_action';
-
-        // Not assigned — nothing to do
-        if (!$shipment->assigned_to_user_id) return 'no_action';
-
-        // Check if the last disposition allows re-calling
-        $shipment->load('lastDisposition');
-        if (!$shipment->isRecallableOnStatusChange()) {
-            Log::info("Shipment #{$shipment->id} ({$shipment->waybill_no}): Status changed but last disposition is not recallable. Keeping as completed.");
-            return 'skipped';
-        }
-
-        // Find matching transition rule
-        $rule = StatusTransitionRule::findMatchingRule($shipment->company_id, $oldStatusId, $newStatusId);
-
-        if (!$rule) {
-            // Default behavior: auto-reassign if agent doesn't handle the new status
-            return $this->defaultStatusChangeHandler($shipment, $newStatusId);
-        }
-
-        return $this->applyTransitionRule($shipment, $rule);
-    }
-
-    /**
-     * Default handler when no specific transition rule exists.
-     * Checks if the current agent handles the new status; if not, unassigns.
-     */
-    protected function defaultStatusChangeHandler(Shipment $shipment, ?int $newStatusId): string
-    {
-        if (!$newStatusId) return 'no_action';
-
-        $allowedStatusIds = $this->getAgentAllowedStatusIds($shipment->assigned_to_user_id);
-
-        // Agent has no restrictions — keep assignment
-        if ($allowedStatusIds === null) return 'no_action';
-
-        // Agent handles this new status — keep assignment
-        if (in_array($newStatusId, $allowedStatusIds)) return 'no_action';
-
-        // Agent does NOT handle this new status — unassign for re-assignment
-        $shipment->update([
-            'assigned_to_user_id' => null,
-            'assigned_at' => null,
-            'telemarketing_status' => 'pending',
-        ]);
-
-        Log::info("Shipment #{$shipment->id} ({$shipment->waybill_no}): Auto-unassigned — agent no longer handles status #{$newStatusId}.");
-        return 'reassigned';
-    }
-
-    /**
-     * Apply a specific transition rule to a shipment.
-     */
-    protected function applyTransitionRule(Shipment $shipment, StatusTransitionRule $rule): string
-    {
-        switch ($rule->action) {
-            case 'auto_reassign':
-                $updateData = [
-                    'assigned_to_user_id' => null,
-                    'assigned_at' => null,
-                    'telemarketing_status' => 'pending',
-                ];
-
-                if ($rule->reset_attempts) {
-                    $updateData['telemarketing_attempt_count'] = 0;
-                    $updateData['last_contacted_at'] = null;
-                    $updateData['last_disposition_id'] = null;
-                    $updateData['callback_scheduled_at'] = null;
-                }
-
-                if ($rule->cooldown_days > 0) {
-                    $updateData['telemarketing_cooldown_until'] = now()->addDays($rule->cooldown_days);
-                }
-
-                $shipment->update($updateData);
-                Log::info("Shipment #{$shipment->id}: auto_reassign applied (reset={$rule->reset_attempts}, cooldown={$rule->cooldown_days}d).");
-                return 'reassigned';
-
-            case 'auto_unassign':
-                $shipment->update([
-                    'assigned_to_user_id' => null,
-                    'assigned_at' => null,
-                    'telemarketing_status' => 'pending',
-                ]);
-                Log::info("Shipment #{$shipment->id}: auto_unassign applied — no call needed.");
-                return 'unassigned';
-
-            case 'mark_completed':
-                $shipment->update([
-                    'assigned_to_user_id' => null,
-                    'assigned_at' => null,
-                    'telemarketing_status' => 'completed',
-                ]);
-                Log::info("Shipment #{$shipment->id}: mark_completed applied.");
-                return 'completed';
-
-            case 'no_action':
-            default:
-                return 'no_action';
-        }
-    }
-
-    /**
-     * Process all status changes for a batch of shipments after import.
-     * Returns summary of actions taken.
-     */
-    public function processStatusChangesAfterImport(int $companyId): array
-    {
-        $summary = ['reassigned' => 0, 'unassigned' => 0, 'completed' => 0, 'skipped' => 0, 'no_action' => 0];
-
-        // Find shipments where status changed (previous_status_id != normalized_status_id)
-        $shipments = Shipment::forCompany($companyId)
-            ->whereNotNull('assigned_to_user_id')
-            ->whereNotNull('previous_status_id')
-            ->whereColumn('previous_status_id', '!=', 'normalized_status_id')
+        return StatusTransitionRule::with(['fromStatus', 'toStatus', 'disposition'])
+            ->where('company_id', $companyId)
             ->get();
+    }
 
-        foreach ($shipments as $shipment) {
-            $action = $this->handleStatusChange($shipment, $shipment->previous_status_id, $shipment->normalized_status_id);
-            $summary[$action] = ($summary[$action] ?? 0) + 1;
+    /**
+     * Create or update a status transition rule.
+     */
+    public function updateStatusTransitionRule(
+        int $companyId,
+        int $fromStatusId,
+        int $toStatusId,
+        int $dispositionId
+    ): StatusTransitionRule {
+        return StatusTransitionRule::updateOrCreate(
+            [
+                'company_id' => $companyId,
+                'from_status_id' => $fromStatusId,
+                'disposition_id' => $dispositionId,
+            ],
+            ['to_status_id' => $toStatusId]
+        );
+    }
 
-            // Clear the previous_status_id after processing
-            $shipment->update(['previous_status_id' => null]);
+    /**
+     * Delete a status transition rule.
+     */
+    public function deleteStatusTransitionRule(int $ruleId, int $companyId): void
+    {
+        StatusTransitionRule::where('id', $ruleId)
+            ->where('company_id', $companyId)
+            ->delete();
+    }
+
+    /**
+     * Apply status transition rules after a call is logged.
+     */
+    public function applyStatusTransition(int $shipmentId, int $dispositionId): ?Shipment
+    {
+        $shipment = Shipment::findOrFail($shipmentId);
+
+        $rule = StatusTransitionRule::where('company_id', $shipment->company_id)
+            ->where('from_status_id', $shipment->normalized_status_id)
+            ->where('disposition_id', $dispositionId)
+            ->first();
+
+        if ($rule) {
+            $shipment->update(['normalized_status_id' => $rule->to_status_id]);
+            Log::info('Status transition rule applied', [
+                'shipment_id' => $shipmentId,
+                'from_status' => $rule->from_status_id,
+                'to_status' => $rule->to_status_id,
+                'disposition' => $dispositionId,
+            ]);
+            return $shipment->fresh();
         }
 
-        Log::info("Post-import status change processing for company #{$companyId}: " . json_encode($summary));
-        return $summary;
+        return null;
     }
 
     // ────────────────────────────────────────────────────────────────
-    //  ASSIGNMENT
+    //  AUTO-ASSIGNMENT
     // ────────────────────────────────────────────────────────────────
 
     /**
-     * Auto-assign shipments to telemarketers based on configured rules.
-     * Respects per-agent status assignments and active toggle.
+     * Get all auto-assignment rules for a company.
      */
-    public function autoAssignByRules(int $companyId, ?int $ruleId = null): array
+    public function getAssignmentRules(int $companyId): \Illuminate\Database\Eloquent\Collection
     {
-        $rulesQuery = TelemarketingAssignmentRule::forCompany($companyId)->active();
-
-        if ($ruleId) {
-            $rulesQuery->where('id', $ruleId);
-        }
-
-        $rules = $rulesQuery->orderBy('priority', 'desc')->get();
-        $results = [];
-
-        foreach ($rules as $rule) {
-            $count = $this->executeAssignmentRule($rule, $companyId);
-            $results[] = [
-                'rule' => $rule->name,
-                'assigned' => $count,
-            ];
-        }
-
-        return $results;
+        return TelemarketingAssignmentRule::with(['status', 'user'])
+            ->where('company_id', $companyId)
+            ->get();
     }
 
     /**
-     * Execute a single assignment rule.
-     * Respects per-agent status assignments and active toggle.
+     * Create or update an auto-assignment rule.
      */
-    protected function executeAssignmentRule(TelemarketingAssignmentRule $rule, int $companyId): int
-    {
-        $telemarketers = $this->getAvailableTelemarketers($companyId);
-        if ($telemarketers->isEmpty()) return 0;
-
-        $query = Shipment::forCompany($companyId)
-            ->unassigned()
-            ->contactable()
-            ->where('telemarketing_status', '!=', 'completed')
-            ->where('telemarketing_status', '!=', 'do_not_call')
-            // Respect cooldown
-            ->where(function ($q) {
-                $q->whereNull('telemarketing_cooldown_until')
-                  ->orWhere('telemarketing_cooldown_until', '<=', now());
-            });
-
-        // Apply rule-specific filters
-        switch ($rule->rule_type) {
-            case 'status_based':
-                if ($rule->status_id) {
-                    $query->where('normalized_status_id', $rule->status_id);
-                }
-                break;
-
-            case 'delivered_age':
-                $deliveredStatusId = \App\Models\ShipmentStatus::where('code', 'delivered')->value('id');
-                if ($deliveredStatusId) {
-                    $query->where('normalized_status_id', $deliveredStatusId)
-                          ->where('signing_time', '<=', now()->subDays($rule->days_threshold ?? 7));
-                }
-                break;
-        }
-
-        // Respect max attempts
-        if ($rule->max_attempts > 0) {
-            $query->where('telemarketing_attempt_count', '<', $rule->max_attempts);
-        }
-
-        $shipments = $query->get();
-
-        if ($shipments->isEmpty()) return 0;
-
-        // Get per-agent status assignments
-        $agentStatusMap = $this->getAllAgentStatusAssignments($companyId);
-
-        // Assign based on method
-        if ($rule->assignment_method === 'workload_based') {
-            return $this->assignWorkloadBased($shipments, $telemarketers, $companyId, $agentStatusMap);
-        }
-
-        return $this->assignRoundRobin($shipments, $telemarketers, $agentStatusMap);
+    public function updateAssignmentRule(
+        int $companyId,
+        int $statusId,
+        ?int $userId = null
+    ): TelemarketingAssignmentRule {
+        return TelemarketingAssignmentRule::updateOrCreate(
+            [
+                'company_id' => $companyId,
+                'shipment_status_id' => $statusId,
+            ],
+            ['assigned_to_user_id' => $userId]
+        );
     }
 
     /**
-     * Get eligible telemarketers for a shipment based on its status.
+     * Delete an auto-assignment rule.
      */
-    protected function getEligibleTelemarketers($telemarketers, int $shipmentStatusId, array $agentStatusMap): array
+    public function deleteAssignmentRule(int $ruleId, int $companyId): void
     {
-        $eligible = [];
-
-        foreach ($telemarketers as $tm) {
-            if (isset($agentStatusMap[$tm->id])) {
-                if (in_array($shipmentStatusId, $agentStatusMap[$tm->id])) {
-                    $eligible[] = $tm;
-                }
-            } else {
-                $eligible[] = $tm;
-            }
-        }
-
-        return $eligible;
+        TelemarketingAssignmentRule::where('id', $ruleId)
+            ->where('company_id', $companyId)
+            ->delete();
     }
 
     /**
-     * Round-robin assignment. Respects per-agent status assignments.
+     * Apply auto-assignment rules to a single shipment.
+     * Typically called when a shipment's status changes.
      */
-    protected function assignRoundRobin($shipments, $telemarketers, array $agentStatusMap): int
+    public function applyAssignmentRules(Shipment $shipment): ?Shipment
     {
-        $count = 0;
-        $rrIndexes = [];
+        // Don't re-assign if it's already assigned to someone
+        if ($shipment->assigned_to_user_id !== null) {
+            return null;
+        }
 
-        foreach ($shipments as $shipment) {
-            $eligible = $this->getEligibleTelemarketers($telemarketers, $shipment->normalized_status_id, $agentStatusMap);
-
-            if (empty($eligible)) continue;
-
-            $eligibleIds = array_map(fn($t) => $t->id, $eligible);
-            sort($eligibleIds);
-            $groupKey = implode(',', $eligibleIds);
-
-            if (!isset($rrIndexes[$groupKey])) {
-                $rrIndexes[$groupKey] = 0;
-            }
-
-            $assignTo = $eligible[$rrIndexes[$groupKey] % count($eligible)];
-            $rrIndexes[$groupKey]++;
-
-            $shipment->update([
-                'assigned_to_user_id' => $assignTo->id,
-                'assigned_at' => now(),
-                'telemarketing_status' => 'in_progress',
+        // Don't re-assign if the last disposition was final and not recallable
+        if (!$shipment->isRecallableOnStatusChange()) {
+            Log::info('Auto-assignment skipped: Shipment has a final, non-recallable disposition.', [
+                'shipment_id' => $shipment->id,
+                'last_disposition_id' => $shipment->last_disposition_id,
             ]);
-            $count++;
+            return null;
         }
 
-        return $count;
-    }
+        $rule = TelemarketingAssignmentRule::where('company_id', $shipment->company_id)
+            ->where('shipment_status_id', $shipment->normalized_status_id)
+            ->first();
 
-    /**
-     * Workload-based assignment. Respects per-agent status assignments.
-     */
-    protected function assignWorkloadBased($shipments, $telemarketers, int $companyId, array $agentStatusMap): int
-    {
-        $workloads = Shipment::forCompany($companyId)
-            ->whereIn('assigned_to_user_id', $telemarketers->pluck('id'))
-            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
-            ->groupBy('assigned_to_user_id')
-            ->select('assigned_to_user_id', DB::raw('COUNT(*) as cnt'))
-            ->pluck('cnt', 'assigned_to_user_id')
-            ->toArray();
-
-        $count = 0;
-
-        foreach ($shipments as $shipment) {
-            $eligible = $this->getEligibleTelemarketers($telemarketers, $shipment->normalized_status_id, $agentStatusMap);
-
-            if (empty($eligible)) continue;
-
-            $minLoad = PHP_INT_MAX;
-            $assignTo = null;
-
-            foreach ($eligible as $tm) {
-                $load = $workloads[$tm->id] ?? 0;
-                if ($load < $minLoad) {
-                    $minLoad = $load;
-                    $assignTo = $tm->id;
-                }
-            }
-
-            if ($assignTo) {
-                $shipment->update([
-                    'assigned_to_user_id' => $assignTo,
-                    'assigned_at' => now(),
-                    'telemarketing_status' => 'in_progress',
-                ]);
-                $workloads[$assignTo] = ($workloads[$assignTo] ?? 0) + 1;
-                $count++;
-            }
-        }
-
-        return $count;
-    }
-
-    /**
-     * Manual assignment of specific shipments to a telemarketer.
-     * STRICT MODE: Validates that shipment statuses match agent's assigned statuses.
-     *
-     * @throws \InvalidArgumentException if status mismatch detected
-     */
-    public function manualAssign(array $shipmentIds, int $userId, int $companyId): int
-    {
-        return Shipment::forCompany($companyId)
-            ->whereIn('id', $shipmentIds)
-            ->update([
-                'assigned_to_user_id' => $userId,
-                'assigned_at' => now(),
-                'telemarketing_status' => DB::raw("CASE WHEN telemarketing_status = 'pending' THEN 'in_progress' ELSE telemarketing_status END"),
+        if ($rule && $rule->assigned_to_user_id) {
+            $shipment->update(['assigned_to_user_id' => $rule->assigned_to_user_id]);
+            Log::info('Auto-assignment rule applied', [
+                'shipment_id' => $shipment->id,
+                'status_id' => $shipment->normalized_status_id,
+                'assigned_to' => $rule->assigned_to_user_id,
             ]);
-    }
-
-    /**
-     * Validate that a manual assignment is allowed (strict mode).
-     * Returns an error message if not allowed, or null if OK.
-     */
-    public function validateManualAssign(int $userId, ?int $statusId, int $companyId): ?string
-    {
-        $allowedStatusIds = $this->getAgentAllowedStatusIds($userId);
-
-        // No restrictions — always allowed
-        if ($allowedStatusIds === null) return null;
-
-        // No status filter specified — check if there are unassigned shipments with non-matching statuses
-        if (!$statusId) {
-            return 'This agent has specific status assignments. Please select a status filter that matches their assigned statuses.';
-        }
-
-        // Check if the selected status matches the agent's assigned statuses
-        if (!in_array($statusId, $allowedStatusIds)) {
-            $agent = User::find($userId);
-            $agentName = $agent ? $agent->name : 'This agent';
-            $allowedNames = \App\Models\ShipmentStatus::whereIn('id', $allowedStatusIds)->pluck('name')->join(', ');
-            return "{$agentName} only handles: {$allowedNames}. The selected status does not match.";
+            return $shipment->fresh();
         }
 
         return null;
     }
 
     /**
-     * Unassign shipments.
+     * Run auto-assignment for all unassigned shipments in a company.
+     * This is a batch process, can be run periodically.
      */
-    public function unassign(array $shipmentIds, int $companyId): int
+    public function runBatchAssignment(int $companyId): int
     {
-        return Shipment::forCompany($companyId)
-            ->whereIn('id', $shipmentIds)
-            ->update([
-                'assigned_to_user_id' => null,
-                'assigned_at' => null,
-            ]);
-    }
+        $rules = $this->getAssignmentRules($companyId)->keyBy('shipment_status_id');
+        if ($rules->isEmpty()) {
+            return 0;
+        }
 
-    /**
-     * Redistribute shipments from one agent to other active agents.
-     * Used when an agent is set to inactive.
-     */
-    public function redistributeFromAgent(int $fromUserId, int $companyId): array
-    {
-        $shipments = Shipment::forCompany($companyId)
-            ->assignedTo($fromUserId)
-            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+        $unassignedShipments = Shipment::forCompany($companyId)
+            ->unassigned()
+            ->telemarketable()
+            ->whereIn('normalized_status_id', $rules->keys())
             ->get();
 
-        if ($shipments->isEmpty()) {
-            return ['redistributed' => 0, 'unassigned' => 0];
-        }
-
-        $activeTelemarketers = $this->getAvailableTelemarketers($companyId)
-            ->filter(fn($tm) => $tm->id !== $fromUserId);
-
-        if ($activeTelemarketers->isEmpty()) {
-            // No active agents to redistribute to — just unassign
-            $count = Shipment::forCompany($companyId)
-                ->assignedTo($fromUserId)
-                ->whereIn('telemarketing_status', ['pending', 'in_progress'])
-                ->update([
-                    'assigned_to_user_id' => null,
-                    'assigned_at' => null,
-                    'telemarketing_status' => 'pending',
-                ]);
-
-            return ['redistributed' => 0, 'unassigned' => $count];
-        }
-
-        $agentStatusMap = $this->getAllAgentStatusAssignments($companyId);
-        $redistributed = 0;
-        $unassigned = 0;
-
-        // Use workload-based for redistribution
-        $workloads = Shipment::forCompany($companyId)
-            ->whereIn('assigned_to_user_id', $activeTelemarketers->pluck('id'))
-            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
-            ->groupBy('assigned_to_user_id')
-            ->select('assigned_to_user_id', DB::raw('COUNT(*) as cnt'))
-            ->pluck('cnt', 'assigned_to_user_id')
-            ->toArray();
-
-        foreach ($shipments as $shipment) {
-            $eligible = $this->getEligibleTelemarketers($activeTelemarketers, $shipment->normalized_status_id, $agentStatusMap);
-
-            if (empty($eligible)) {
-                // No eligible agent — unassign
-                $shipment->update([
-                    'assigned_to_user_id' => null,
-                    'assigned_at' => null,
-                    'telemarketing_status' => 'pending',
-                ]);
-                $unassigned++;
-                continue;
-            }
-
-            // Find agent with lowest workload
-            $minLoad = PHP_INT_MAX;
-            $assignTo = null;
-
-            foreach ($eligible as $tm) {
-                $load = $workloads[$tm->id] ?? 0;
-                if ($load < $minLoad) {
-                    $minLoad = $load;
-                    $assignTo = $tm->id;
+        $count = 0;
+        foreach ($unassignedShipments as $shipment) {
+            $rule = $rules->get($shipment->normalized_status_id);
+            if ($rule && $rule->assigned_to_user_id) {
+                // Check if this shipment is recallable before assigning
+                if ($shipment->isRecallableOnStatusChange()) {
+                    $shipment->update(['assigned_to_user_id' => $rule->assigned_to_user_id]);
+                    $count++;
                 }
             }
-
-            if ($assignTo) {
-                $shipment->update([
-                    'assigned_to_user_id' => $assignTo,
-                    'assigned_at' => now(),
-                ]);
-                $workloads[$assignTo] = ($workloads[$assignTo] ?? 0) + 1;
-                $redistributed++;
-            }
         }
 
-        return ['redistributed' => $redistributed, 'unassigned' => $unassigned];
+        if ($count > 0) {
+            Log::info("Batch auto-assignment complete for company {$companyId}", [
+                'assigned_count' => $count,
+            ]);
+        }
+
+        return $count;
     }
 
+    // ────────────────────────────────────────────────────────────────
+    //  DISPOSITIONS
+    // ────────────────────────────────────────────────────────────────
+
     /**
-     * Get available telemarketers for a company (active + telemarketing active).
+     * Get all dispositions for a company.
      */
-    public function getAvailableTelemarketers(int $companyId)
+    public function getDispositions(int $companyId): \Illuminate\Database\Eloquent\Collection
     {
-        return User::forCompany($companyId)
-            ->active()
-            ->telemarketingActive()
-            ->role('Telemarketer')
+        return TelemarketingDisposition::where('company_id', $companyId)
+            ->orWhereNull('company_id') // Include global dispositions
+            ->orderBy('name')
             ->get();
     }
 
+    /**
+     * Create a new disposition for a company.
+     */
+    public function createDisposition(int $companyId, array $data): TelemarketingDisposition
+    {
+        $data['company_id'] = $companyId;
+        return TelemarketingDisposition::create($data);
+    }
+
+    /**
+     * Update an existing disposition.
+     */
+    public function updateDisposition(int $dispositionId, int $companyId, array $data): TelemarketingDisposition
+    {
+        $disposition = TelemarketingDisposition::where('id', $dispositionId)
+            ->where('company_id', $companyId) // Ensure they can only edit their own
+            ->firstOrFail();
+
+        $disposition->update($data);
+        return $disposition;
+    }
+
+    /**
+     * Delete a disposition.
+     */
+    public function deleteDisposition(int $dispositionId, int $companyId): void
+    {
+        // Prevent deleting if it's in use by transition rules or logs
+        $isUsedInRules = StatusTransitionRule::where('disposition_id', $dispositionId)->exists();
+        $isUsedInLog::where('disposition_id', $dispositionId)->exists();
+
+        if ($isUsedInRules || $isUsedInLogs) {
+            throw new \Exception('Cannot delete disposition as it is currently in use.');
+        }
+
+        TelemarketingDisposition::where('id', $dispositionId)
+            ->where('company_id', $companyId)
+            ->delete();
+    }
+
     // ────────────────────────────────────────────────────────────────
-    //  DASHBOARD STATS
+    //  STATS & DASHBOARD
     // ────────────────────────────────────────────────────────────────
 
     /**
-     * Get telemarketing dashboard stats for a user.
+     * Get dashboard stats for a single telemarketer.
      */
-    public function getUserStats(int $userId, int $companyId): array
+    public function getAgentStats(int $userId, int $companyId): array
     {
         $today = now()->startOfDay();
+        $baseQuery = Shipment::forCompany($companyId)->assignedTo($userId);
 
-        $baseQuery = Shipment::forCompany($companyId)
-            ->assignedTo($userId)
-            ->telemarketable();
-
+        // Get agent's allowed statuses
         $allowedStatusIds = $this->getAgentAllowedStatusIds($userId);
 
         $totalAssigned = (clone $baseQuery)->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))->count();
 
-        $callsToday = TelemarketingLog::where('user_id', $userId)
+        $callsToday = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $today)
             ->count();
 
@@ -807,45 +567,37 @@ class TelemarketingService
             ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
             ->count();
 
-        $completedToday = TelemarketingLog::where('user_id', $userId)
+        $completedToday = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $today)
             ->whereHas('disposition', fn ($q) => $q->where('is_final', true))
             ->count();
 
-        $neverContacted = Shipment::forCompany($companyId)
-            ->assignedTo($userId)
-            ->telemarketable()
+        $neverContacted = (clone $baseQuery)
             ->neverContacted()
             ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
             ->count();
 
-        $dispositionBreakdown = TelemarketingLog::where('user_id', $userId)
+        $dispositionBreakdown = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('telemarketing_logs.created_at', '>=', $today)
             ->join('telemarketing_dispositions', 'telemarketing_logs.disposition_id', '=', 'telemarketing_dispositions.id')
             ->groupBy('telemarketing_dispositions.name', 'telemarketing_dispositions.color')
             ->select(
-                'telemarketing_dispositions.name',
-                'telemarketing_dispositions.color',
+                'telemarketing_dispositions.name as disposition_name',
+                'telemarketing_dispositions.color as disposition_color',
                 DB::raw('COUNT(*) as count')
             )
-            ->orderBy('count', 'desc')
             ->get();
 
-        $assignedStatuses = $allowedStatusIds
-            ? \App\Models\ShipmentStatus::whereIn('id', $allowedStatusIds)->pluck('name')->toArray()
-            : ['All Statuses'];
-
-        // Pending in queue (assigned but not yet called today / still needs follow-up)
-        $pendingInQueue = (clone $baseQuery)
-            ->when($allowedStatusIds, fn($q) => $q->whereIn('normalized_status_id', $allowedStatusIds))
-            ->where(function ($q) {
-                $q->where('telemarketing_status', 'pending')
-                  ->orWhere('telemarketing_status', 'in_progress');
+        // Total calls today with a final disposition
+        $finalCallsToday = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $today)
+            ->whereHas('disposition', function ($q) {
+                $q->where('is_final', true);
             })
             ->count();
 
         // Confirmation rate today (confirmed / total calls with final disposition today)
-        $confirmedToday = TelemarketingLog::where('user_id', $userId)
+        $confirmedToday = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $today)
             ->whereHas('disposition', fn ($q) => $q->where('name', 'like', '%Accept%')->orWhere('name', 'like', '%Confirm%'))
             ->count();
@@ -853,20 +605,16 @@ class TelemarketingService
 
         // Average calls per day this week
         $weekStart = now()->startOfWeek();
-        $daysWorked = TelemarketingLog::where('user_id', $userId)
+        $daysWorked = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $weekStart)
             ->select(DB::raw('DATE(created_at) as call_date'))
             ->groupBy('call_date')
             ->get()
             ->count();
-        $totalCallsThisWeek = TelemarketingLog::where('user_id', $userId)
+        $totalCallsThisWeek = \App\Models\TelemarketingLog::where('user_id', $userId)
             ->where('created_at', '>=', $weekStart)
             ->count();
         $avgCallsPerDay = $daysWorked > 0 ? round($totalCallsThisWeek / $daysWorked) : 0;
-
-        // Daily target progress (calls today vs total assigned as rough target)
-        $dailyTarget = $totalAssigned > 0 ? min($totalAssigned, 100) : 100; // Cap at 100 as reasonable daily target
-        $progressPercent = $dailyTarget > 0 ? min(round(($callsToday / $dailyTarget) * 100, 1), 100) : 0;
 
         return [
             'total_assigned' => $totalAssigned,
@@ -875,131 +623,43 @@ class TelemarketingService
             'completed_today' => $completedToday,
             'never_contacted' => $neverContacted,
             'disposition_breakdown' => $dispositionBreakdown,
-            'assigned_statuses' => $assignedStatuses,
-            'pending_in_queue' => $pendingInQueue,
-            'confirmed_today' => $confirmedToday,
-            'confirmation_rate' => $confirmationRate,
-            'avg_calls_per_day' => $avgCallsPerDay,
-            'total_calls_this_week' => $totalCallsThisWeek,
-            'progress_percent' => $progressPercent,
+            'confirmation_rate_today' => $confirmationRate,
+            'avg_calls_per_day_this_week' => $avgCallsPerDay,
         ];
     }
 
     /**
-     * Get manager-level overview stats for the whole company.
+     * Get dashboard stats for the entire company.
      */
     public function getCompanyStats(int $companyId): array
     {
         $today = now()->startOfDay();
 
-        $totalPending = Shipment::forCompany($companyId)
-            ->where('telemarketing_status', 'pending')
-            ->count();
-
-        $totalInProgress = Shipment::forCompany($companyId)
-            ->where('telemarketing_status', 'in_progress')
-            ->count();
-
-        $totalCompleted = Shipment::forCompany($companyId)
-            ->where('telemarketing_status', 'completed')
-            ->count();
-
-        $totalUnassigned = Shipment::forCompany($companyId)
-            ->unassigned()
-            ->contactable()
-            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
-            ->count();
-
+        $totalShipments = Shipment::forCompany($companyId)->count();
+        $telemarketable = Shipment::forCompany($companyId)->telemarketable()->count();
         $onCooldown = Shipment::forCompany($companyId)
             ->onCooldown()
             ->count();
 
-        $callsToday = TelemarketingLog::whereHas('shipment', fn ($q) => $q->forCompany($companyId))
+        $callsToday = \App\Models\TelemarketingLog::whereHas('shipment', fn ($q) => $q->forCompany($companyId))
             ->where('created_at', '>=', $today)
             ->count();
 
         // Per-telemarketer stats — include ALL telemarketers (active + inactive)
-        $telemarketers = User::forCompany($companyId)
-            ->active()
-            ->role('Telemarketer')
+        $telemarketers = User::where('company_id', $companyId)
+            ->where('role', 'telemarketer')
             ->withCount([
-                'assignedShipments as pending_count' => function ($q) {
-                    $q->whereIn('telemarketing_status', ['pending', 'in_progress']);
-                },
-                'telemarketingLogs as calls_today_count' => function ($q) use ($today) {
-                    $q->where('created_at', '>=', $today);
-                },
+                'telemarketingLogs as calls_today' => fn ($q) => $q->where('created_at', '>=', $today),
+                'telemarketingLogs as calls_this_week' => fn ($q) => $q->where('created_at', '>=', now()->startOfWeek()),
             ])
             ->get();
 
-        $agentStatusMap = $this->getAllAgentStatusAssignments($companyId);
-
         return [
-            'total_pending' => $totalPending,
-            'total_in_progress' => $totalInProgress,
-            'total_completed' => $totalCompleted,
-            'total_unassigned' => $totalUnassigned,
+            'total_shipments' => $totalShipments,
+            'telemarketable' => $telemarketable,
             'on_cooldown' => $onCooldown,
             'calls_today' => $callsToday,
             'telemarketers' => $telemarketers,
-            'agent_status_map' => $agentStatusMap,
         ];
-    }
-
-    // ────────────────────────────────────────────────────────────────
-    //  DISPOSITIONS
-    // ────────────────────────────────────────────────────────────────
-
-    public function getDispositions(?int $companyId)
-    {
-        return TelemarketingDisposition::forCompany($companyId)
-            ->orderBy('sort_order')
-            ->get();
-    }
-
-    public function createDisposition(int $companyId, array $data): TelemarketingDisposition
-    {
-        return TelemarketingDisposition::create(array_merge($data, [
-            'company_id' => $companyId,
-            'is_system' => false,
-        ]));
-    }
-
-    public function updateDisposition(TelemarketingDisposition $disposition, array $data): TelemarketingDisposition
-    {
-        $disposition->update($data);
-        return $disposition->fresh();
-    }
-
-    public function deleteDisposition(TelemarketingDisposition $disposition): bool
-    {
-        if ($disposition->is_system) {
-            return false;
-        }
-        return $disposition->delete();
-    }
-
-    // ────────────────────────────────────────────────────────────────
-    //  TRANSITION RULES
-    // ────────────────────────────────────────────────────────────────
-
-    public function getTransitionRules(int $companyId)
-    {
-        return StatusTransitionRule::forCompany($companyId)
-            ->with(['fromStatus', 'toStatus'])
-            ->orderBy('priority', 'desc')
-            ->get();
-    }
-
-    public function createTransitionRule(int $companyId, array $data): StatusTransitionRule
-    {
-        return StatusTransitionRule::create(array_merge($data, [
-            'company_id' => $companyId,
-        ]));
-    }
-
-    public function deleteTransitionRule(StatusTransitionRule $rule): bool
-    {
-        return $rule->delete();
     }
 }

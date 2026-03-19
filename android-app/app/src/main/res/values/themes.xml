@@ -9,4 +9,14 @@
         <item name="colorOnSecondary">#FFFFFF</item>
         <item name="android:statusBarColor">#4F46E5</item>
     </style>
+
+    <!-- In-call screen theme: dark background, no action bar, fullscreen -->
+    <style name="Theme.TeleSMS.InCall" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">#1A1A2E</item>
+        <item name="colorPrimaryVariant">#0F0F1E</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#1A1A2E</item>
+        <item name="android:navigationBarColor">#1A1A2E</item>
+        <item name="android:windowBackground">#1A1A2E</item>
+    </style>
 </resources>

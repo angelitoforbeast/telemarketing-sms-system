@@ -67,6 +67,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware('company.can:shipments.auto-assign')->group(function () {
             Route::post('/shipments/auto-assign', [ShipmentController::class, 'autoAssign'])->name('shipments.auto-assign');
         });
+        Route::middleware('company.can:shipments.delete')->group(function () {
+            Route::delete('/shipments/{shipment}', [ShipmentController::class, 'destroy'])->name('shipments.destroy');
+            Route::post('/shipments/bulk-delete', [ShipmentController::class, 'bulkDelete'])->name('shipments.bulk-delete');
+        });
 
         // ── Telemarketing Module ──
         // Dashboard (all roles with telemarketing access)
@@ -251,3 +255,12 @@ Route::middleware(["auth"])->group(function () {
     Route::post("/sms/blast-report", [\App\Http\Controllers\Sms\SmsBlastController::class, "report"])->name("sms.blast.report");
 });
 require __DIR__.'/auth.php';
+
+// APK Download page for agents
+Route::get('/download-app', function () { return view('download-app'); })->name('download.app');
+
+Route::prefix("telemarketing")->name("telemarketing.")->middleware(["auth", "verified"])->group(function () {
+    Route::get("manual-assignments", [App\Http\Controllers\TelemarketingAssignmentController::class, "index"])->name("manual-assignments");
+    Route::post("manual-assignments", [App\Http\Controllers\TelemarketingAssignmentController::class, "assign"])->name("manual-assignments.assign");
+    Route::get("pending-callbacks", [App\Http\Controllers\TelemarketingAssignmentController::class, "pendingCallbacks"])->name("pending-callbacks");
+});
