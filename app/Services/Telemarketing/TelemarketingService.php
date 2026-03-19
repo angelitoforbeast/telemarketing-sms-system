@@ -688,4 +688,15 @@ class TelemarketingService
             'agent_status_map' => $agentStatusMap,
         ];
     }
+
+    /**
+     * Get all status transition rules for a company.
+     */
+    public function getTransitionRules(int $companyId)
+    {
+        return StatusTransitionRule::forCompany($companyId)
+            ->with(['fromStatus', 'toStatus'])
+            ->orderBy('priority', 'desc')
+            ->get();
+    }
 }
