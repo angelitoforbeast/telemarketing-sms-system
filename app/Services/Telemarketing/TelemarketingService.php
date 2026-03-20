@@ -794,8 +794,8 @@ class TelemarketingService
             ->whereHas('disposition', fn($q) => $q->where('is_final', true))
             ->count();
 
-        $dispositionBreakdown = \App\Models\TelemarketingLog::where('user_id', $userId)
-            ->whereDate('created_at', today())
+        $dispositionBreakdown = \App\Models\TelemarketingLog::where('telemarketing_logs.user_id', $userId)
+            ->whereDate('telemarketing_logs.created_at', today())
             ->join('telemarketing_dispositions', 'telemarketing_logs.disposition_id', '=', 'telemarketing_dispositions.id')
             ->selectRaw('telemarketing_dispositions.name, telemarketing_dispositions.color, COUNT(*) as count')
             ->groupBy('telemarketing_dispositions.name', 'telemarketing_dispositions.color')
