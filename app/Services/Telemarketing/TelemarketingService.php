@@ -729,6 +729,128 @@ class TelemarketingService
     }
 
     /**
+     * Get stats for a telemarketer's personal dashboard.
+     */
+    public function getUserStats(int $userId, int $companyId): array
+    {
+        $totalAssigned = Shipment::forCompany($companyId)
+            ->assignedTo($userId)
+            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+            ->count();
+
+        $pendingInQueue = Shipment::forCompany($companyId)
+            ->assignedTo($userId)
+            ->telemarketable()
+            ->count();
+
+        $callsToday = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->whereDate('created_at', today())
+            ->count();
+
+        // "Confirmed" = dispositions with color green or name containing 'Will Accept' or 'Reorder'
+        $confirmedToday = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->whereDate('created_at', today())
+            ->whereHas('disposition', function ($q) {
+                $q->where('color', 'green')
+                  ->orWhere('color', 'emerald');
+            })
+            ->count();
+
+        $callbacksDue = Shipment::forCompany($companyId)
+            ->assignedTo($userId)
+            ->whereNotNull('callback_scheduled_at')
+            ->where('callback_scheduled_at', '<=', now())
+            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+            ->count();
+
+        $neverContacted = Shipment::forCompany($companyId)
+            ->assignedTo($userId)
+            ->whereIn('telemarketing_status', ['pending', 'in_progress'])
+            ->where('telemarketing_attempt_count', 0)
+            ->count();
+
+        $progressPercent = $totalAssigned > 0
+            ? min(100, round(($callsToday / max($totalAssigned, 1)) * 100))
+            : 0;
+
+        $confirmationRate = $callsToday > 0
+            ? round(($confirmedToday / $callsToday) * 100)
+            : 0;
+
+        $startOfWeek = now()->startOfWeek();
+        $totalCallsThisWeek = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $startOfWeek)
+            ->count();
+
+        $daysWorkedThisWeek = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->where('created_at', '>=', $startOfWeek)
+            ->selectRaw('COUNT(DISTINCT DATE(created_at)) as days')
+            ->value('days') ?: 1;
+
+        $avgCallsPerDay = round($totalCallsThisWeek / $daysWorkedThisWeek);
+
+        $completedToday = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->whereDate('created_at', today())
+            ->whereHas('disposition', fn($q) => $q->where('is_final', true))
+            ->count();
+
+        $dispositionBreakdown = \App\Models\TelemarketingLog::where('user_id', $userId)
+            ->whereDate('created_at', today())
+            ->join('telemarketing_dispositions', 'telemarketing_logs.disposition_id', '=', 'telemarketing_dispositions.id')
+            ->selectRaw('telemarketing_dispositions.name, telemarketing_dispositions.color, COUNT(*) as count')
+            ->groupBy('telemarketing_dispositions.name', 'telemarketing_dispositions.color')
+            ->orderByDesc('count')
+            ->get();
+
+        return [
+            'total_assigned' => $totalAssigned,
+            'pending_in_queue' => $pendingInQueue,
+            'calls_today' => $callsToday,
+            'confirmed_today' => $confirmedToday,
+            'callbacks_due' => $callbacksDue,
+            'never_contacted' => $neverContacted,
+            'progress_percent' => $progressPercent,
+            'confirmation_rate' => $confirmationRate,
+            'avg_calls_per_day' => $avgCallsPerDay,
+            'total_calls_this_week' => $totalCallsThisWeek,
+            'completed_today' => $completedToday,
+            'disposition_breakdown' => $dispositionBreakdown,
+        ];
+    }
+
+    /**
+     * Manually assign shipments to a telemarketer (called from ManualAssignJob).
+     */
+    public function manualAssign(array $shipmentIds, int $telemarketerUserId, int $companyId): int
+    {
+        $count = Shipment::forCompany($companyId)
+            ->whereIn('id', $shipmentIds)
+            ->update([
+                'assigned_to_user_id' => $telemarketerUserId,
+                'assigned_at' => now(),
+                'telemarketing_status' => 'in_progress',
+            ]);
+
+        return $count;
+    }
+
+    /**
+     * Unassign shipments from a telemarketer (called from UnassignShipmentsJob).
+     */
+    public function unassign(array $shipmentIds, int $companyId): int
+    {
+        $count = Shipment::forCompany($companyId)
+            ->whereIn('id', $shipmentIds)
+            ->update([
+                'assigned_to_user_id' => null,
+                'assigned_at' => null,
+                'telemarketing_status' => 'pending',
+            ]);
+
+        return $count;
+    }
+
+    /**
      * Get pending callbacks for the company (for manager/owner dashboard).
      * Respects the company setting for showing all shipments or callbacks only.
      */
